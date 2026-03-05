@@ -41,6 +41,8 @@ const TRANSLATIONS = {
     groupByMonth: 'Group notes by month',
     newNote: 'New note',
     newNoteInDir: 'New note in this folder',
+    deleteNote: 'Delete note',
+    deleteNoteConfirm: 'Are you sure you want to delete "{name}"?',
     untitledNote: 'Untitled',
     noContent: 'No content',
     emptyGallery: 'No notes found',
@@ -78,6 +80,8 @@ const TRANSLATIONS = {
     groupByMonth: '按组显示笔记',
     newNote: '新建笔记',
     newNoteInDir: '在此目录新建笔记',
+    deleteNote: '删除笔记',
+    deleteNoteConfirm: '确定要删除「{name}」吗？',
     untitledNote: '未命名笔记',
     noContent: '暂无内容',
     emptyGallery: '暂无笔记',
@@ -353,6 +357,16 @@ class GalleryView extends ItemView {
                   .onClick(async () => {
                     await this.createNewNote(getParentPath(file));
                     await renderCards(select.value);
+                  });
+              });
+              menu.addItem((item) => {
+                item.setTitle(t('deleteNote'))
+                  .setIcon('trash')
+                  .onClick(async () => {
+                    if (confirm(t('deleteNoteConfirm', { name: file.basename }))) {
+                      await this.app.vault.trash(file, true);
+                      await renderCards(select.value);
+                    }
                   });
               });
               menu.showAtMouseEvent(e);
