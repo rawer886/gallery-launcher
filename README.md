@@ -30,8 +30,37 @@ An [Obsidian](https://obsidian.md) plugin that lets you browse your vault notes 
 
 ## Usage
 
-- Click the grid icon in the left ribbon, or
-- Open the command palette and run **Gallery Launcher: Open Gallery**
+### Opening the Gallery
+
+There are three ways to open the gallery view:
+
+1. **Ribbon icon** — click the grid icon (⊞) in the left sidebar ribbon
+2. **Command palette** — press `Ctrl/Cmd + P`, then type `Gallery Launcher: Open Gallery`
+3. **Hotkey** — assign a custom hotkey in **Settings → Hotkeys**, search for "Gallery Launcher"
+
+### Browsing Notes
+
+- The gallery displays all your Markdown (`.md`) and Canvas (`.canvas`) files as cards
+- Each card shows the **title**, **content summary**, **tags**, **folder path**, and **creation date**
+- Click any card to open that note
+- Use the **folder dropdown** at the top to filter by a specific folder or view all
+
+### Sorting & Grouping
+
+- Click the **sort button** (↕) next to the folder dropdown to access sorting options:
+  - Sort by **created time**, **modified time**, or **title**
+  - Toggle between ascending and descending order
+  - Enable/disable **month grouping** to organize notes by month
+
+### Creating New Notes
+
+- **Right-click** on any empty area in the gallery to create a new note in the current folder
+- **Right-click** on a specific card to create a new note in that card's folder
+
+### Large Vaults
+
+- For vaults with many notes, the gallery loads **100 notes at a time**
+- Click the **"Load more"** button at the bottom to load the next batch
 
 ## Settings
 
