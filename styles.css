@@ -1,0 +1,218 @@
+/* Gallery Launcher — Obsidian Community Plugin
+ * All layout & theming CSS lives here; dynamic values use CSS custom properties
+ * set at runtime by the plugin (--gallery-card-min-width, --gallery-card-min-height).
+ */
+
+/* Page padding */
+.gallery-page {
+  padding: 16px;
+}
+
+/* Toolbar */
+.gallery-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+/* Folder dropdown */
+.gallery-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--interactive-accent);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 36px 8px 14px;
+  font-size: 0.88em;
+  font-weight: 600;
+  color: var(--text-on-accent);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  letter-spacing: 0.02em;
+}
+.gallery-select:hover {
+  background: var(--interactive-accent-hover);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+.gallery-select:focus {
+  background: var(--interactive-accent-hover);
+  box-shadow: 0 0 0 3px rgba(var(--interactive-accent-rgb, 124, 77, 255), 0.25);
+}
+.gallery-select:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Sort button */
+.gallery-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.gallery-sort-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+/* Grid layout — card width driven by CSS custom property */
+.gallery-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--gallery-card-min-width, 200px), 1fr));
+  gap: 12px;
+  padding: 4px 0 16px 0;
+}
+
+/* Month group header */
+.gallery-month {
+  grid-column: 1 / -1;
+  font-size: 0.95em;
+  font-weight: 600;
+  color: var(--text-normal);
+  padding: 16px 0 4px 0;
+  margin: 0;
+}
+.gallery-month:first-child {
+  padding-top: 0;
+}
+
+/* Month count badge */
+.gallery-month-count {
+  float: right;
+  font-size: 0.85em;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Card — height driven by CSS custom property */
+.gallery-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: var(--gallery-card-min-height, 160px);
+  transition: box-shadow 0.15s ease;
+}
+.gallery-card:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* Card title */
+.gallery-card .card-title {
+  font-size: 0.95em;
+  font-weight: 700;
+  margin-bottom: 8px;
+  line-height: 1.35;
+  color: var(--text-normal);
+  text-align: left;
+}
+
+/* Card content / summary */
+.gallery-card .card-content {
+  font-size: 0.8em;
+  line-height: 1.55;
+  color: var(--text-muted);
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  margin-bottom: 10px;
+}
+
+/* Tags */
+.gallery-card .card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.gallery-card .card-tags .tag-item {
+  font-size: 0.68em;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+/* Card footer */
+.gallery-card .card-footer {
+  flex-shrink: 0;
+}
+
+/* Folder path */
+.gallery-card .card-folder {
+  font-size: 0.72em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Date */
+.gallery-card .card-date {
+  font-size: 0.78em;
+  color: var(--text-accent);
+  font-weight: 500;
+}
+
+/* Empty state */
+.gallery-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.gallery-empty .gallery-empty-icon {
+  font-size: 2.5em;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+.gallery-empty .gallery-empty-text {
+  font-size: 0.95em;
+}
+
+/* Load more button */
+.gallery-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
+}
+.gallery-load-more button {
+  padding: 8px 24px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 0.88em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.gallery-load-more button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}

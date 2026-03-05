@@ -1,0 +1,10 @@
+{
+  "id": "gallery-launcher",
+  "name": "Gallery Launcher",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Browse vault notes as a gallery of cards with folder filtering, sorting, grouping, and quick note creation",
+  "author": "rawer886",
+  "authorUrl": "https://github.com/rawer886",
+  "isDesktopOnly": false
+}
