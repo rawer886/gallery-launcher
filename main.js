@@ -5,6 +5,11 @@ const { Plugin, ItemView, Notice, PluginSettingTab, Setting, Menu } = require('o
 // ---------------------------------------------------------------------------
 const VIEW_TYPE = 'gallery-view';
 const RENDER_BATCH_SIZE = 100;
+const FOLDER_ALL = '__all__';
+const GROUP_FLAT = '__flat__';
+const CSS_VAR_MIN_WIDTH = '--gallery-card-min-width';
+const CSS_VAR_MIN_HEIGHT = '--gallery-card-min-height';
+const DEBOUNCE_MS = 500;
 
 const DEFAULT_SETTINGS = {
   excludeDirs: 'assets',
@@ -100,20 +105,58 @@ const TRANSLATIONS = {
   },
 };
 
-function getLocale() {
+// Cache locale once — it doesn't change during a session
+const _locale = (() => {
   try {
     const m = window.moment && window.moment.locale && window.moment.locale();
     if (m && m.startsWith('zh')) return 'zh';
   } catch (_) { /* ignore */ }
   if (typeof navigator !== 'undefined' && navigator.language && navigator.language.startsWith('zh')) return 'zh';
   return 'en';
-}
+})();
 
 function t(key, params) {
-  const locale = getLocale();
-  const str = (TRANSLATIONS[locale] && TRANSLATIONS[locale][key]) || TRANSLATIONS.en[key] || key;
+  const str = (TRANSLATIONS[_locale] && TRANSLATIONS[_locale][key]) || TRANSLATIONS.en[key] || key;
   if (!params) return str;
   return str.replace(/\{(\w+)\}/g, (_, k) => (params[k] !== undefined ? params[k] : `{${k}}`));
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function formatDate(date, includeDay = true) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  if (!includeDay) return `${y}/${m}`;
+  return `${y}/${m}/${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function stripMarkdown(content, maxLen) {
+  return content
+    .replace(/^---[\s\S]*?---/m, '')
+    .replace(/^#+\s+.*$/gm, '')
+    .replace(/```[\s\S]*?```/gm, '')
+    .replace(/!?\[\[.*?\]\]/g, '')
+    .replace(/!\[.*?\]\(.*?\)/g, '')
+    .replace(/\[.*?\]\(.*?\)/g, '')
+    .replace(/[-*]\s+\[.\]\s*/g, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/[>#\-|]/g, '')
+    .replace(/\n{2,}/g, ' ')
+    .trim()
+    .substring(0, maxLen);
+}
+
+function getParentPath(file) {
+  return file.parent ? file.parent.path : '/';
+}
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -150,10 +193,10 @@ class GalleryView extends ItemView {
     const toolbar = container.createEl('div', { cls: 'gallery-toolbar' });
     const select = toolbar.createEl('select', { cls: 'gallery-select' });
 
-    select.createEl('option', { text: t('allFolders'), attr: { value: '__all__' } });
-    for (const f of folders) {
-      const opt = select.createEl('option', { text: f, attr: { value: f } });
-      if (settings.defaultFolder && f === settings.defaultFolder) opt.selected = true;
+    select.createEl('option', { text: t('allFolders'), attr: { value: FOLDER_ALL } });
+    for (const folderName of folders) {
+      const opt = select.createEl('option', { text: folderName, attr: { value: folderName } });
+      if (settings.defaultFolder && folderName === settings.defaultFolder) opt.selected = true;
     }
 
     // Sort button
@@ -178,7 +221,7 @@ class GalleryView extends ItemView {
             .onClick(async () => {
               settings.sortBy = opt.key;
               settings.sortOrder = opt.order;
-              await this.plugin.saveData(settings);
+              await this.plugin.saveSettings();
               await renderCards(select.value);
             });
         });
@@ -189,7 +232,7 @@ class GalleryView extends ItemView {
           .setChecked(settings.groupByMonth)
           .onClick(async () => {
             settings.groupByMonth = !settings.groupByMonth;
-            await this.plugin.saveData(settings);
+            await this.plugin.saveSettings();
             await renderCards(select.value);
           });
       });
@@ -206,7 +249,7 @@ class GalleryView extends ItemView {
         item.setTitle(t('newNote'))
           .setIcon('plus')
           .onClick(async () => {
-            const dir = select.value === '__all__' ? '/' : select.value;
+            const dir = select.value === FOLDER_ALL ? '/' : select.value;
             await this.createNewNote(dir);
             await renderCards(select.value);
           });
@@ -222,17 +265,17 @@ class GalleryView extends ItemView {
 
       // Collect files
       let files = [];
-      if (folder === '__all__') {
-        for (const f of folders) {
-          const folderObj = this.app.vault.getAbstractFileByPath(f);
+      if (folder === FOLDER_ALL) {
+        for (const folderName of folders) {
+          const folderObj = this.app.vault.getAbstractFileByPath(folderName);
           if (folderObj && folderObj.children) {
-            files.push(...this.collectNoteFiles(folderObj));
+            this.collectNoteFiles(folderObj, files);
           }
         }
       } else {
         const folderObj = this.app.vault.getAbstractFileByPath(folder);
         if (folderObj && folderObj.children) {
-          files = this.collectNoteFiles(folderObj);
+          this.collectNoteFiles(folderObj, files);
         }
       }
 
@@ -269,13 +312,12 @@ class GalleryView extends ItemView {
         if (groupByMonth) {
           const timeKey = (sortBy === 'ctime') ? 'ctime' : 'mtime';
           for (const file of visibleFiles) {
-            const date = new Date(file.stat[timeKey]);
-            const month = `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+            const month = formatDate(new Date(file.stat[timeKey]), false);
             if (!groups[month]) groups[month] = [];
             groups[month].push(file);
           }
         } else {
-          groups['__flat__'] = visibleFiles;
+          groups[GROUP_FLAT] = visibleFiles;
         }
 
         for (const [month, monthFiles] of Object.entries(groups)) {
@@ -291,25 +333,11 @@ class GalleryView extends ItemView {
             let summary = '';
             try {
               const content = await this.app.vault.cachedRead(file);
-              summary = content
-                .replace(/^---[\s\S]*?---/m, '')
-                .replace(/^#+\s+.*$/gm, '')
-                .replace(/```[\s\S]*?```/gm, '')
-                .replace(/!?\[\[.*?\]\]/g, '')
-                .replace(/!\[.*?\]\(.*?\)/g, '')
-                .replace(/\[.*?\]\(.*?\)/g, '')
-                .replace(/[-*]\s+\[.\]\s*/g, '')
-                .replace(/^\s*[-*+]\s+/gm, '')
-                .replace(/[>#\-|]/g, '')
-                .replace(/\n{2,}/g, ' ')
-                .trim();
-              if (summary.length > settings.summaryLength) {
-                summary = summary.substring(0, settings.summaryLength) + '...';
+              summary = stripMarkdown(content, settings.summaryLength);
+              if (summary.length >= settings.summaryLength) {
+                summary += '...';
               }
             } catch (e) { /* ignore */ }
-
-            const cdate = new Date(file.stat.ctime);
-            const dateStr = `${cdate.getFullYear()}/${String(cdate.getMonth() + 1).padStart(2, '0')}/${String(cdate.getDate()).padStart(2, '0')}`;
 
             const card = grid.createEl('div', { cls: 'gallery-card' });
             card.addEventListener('click', () => {
@@ -323,8 +351,7 @@ class GalleryView extends ItemView {
                 item.setTitle(t('newNoteInDir'))
                   .setIcon('plus')
                   .onClick(async () => {
-                    const d = file.parent ? file.parent.path : '/';
-                    await this.createNewNote(d);
+                    await this.createNewNote(getParentPath(file));
                     await renderCards(select.value);
                   });
               });
@@ -337,27 +364,26 @@ class GalleryView extends ItemView {
             // Tags
             if (settings.showTags) {
               const cache = this.app.metadataCache.getFileCache(file);
-              const tags = [];
+              const tagSet = new Set();
               if (cache) {
                 if (cache.frontmatter && cache.frontmatter.tags) {
                   const fmTags = cache.frontmatter.tags;
                   if (Array.isArray(fmTags)) {
-                    tags.push(...fmTags.map(tag => String(tag).replace('#', '')));
+                    fmTags.forEach(tag => tagSet.add(String(tag).replace(/^#/, '')));
                   } else if (typeof fmTags === 'string') {
-                    tags.push(fmTags.replace('#', ''));
+                    tagSet.add(fmTags.replace(/^#/, ''));
                   }
                 }
                 if (cache.tags) {
                   for (const tagRef of cache.tags) {
-                    const name = tagRef.tag.replace('#', '');
-                    if (!tags.includes(name)) tags.push(name);
+                    tagSet.add(tagRef.tag.replace(/^#/, ''));
                   }
                 }
               }
-              if (tags.length > 0) {
+              if (tagSet.size > 0) {
                 const tagsEl = body.createEl('div', { cls: 'card-tags' });
-                for (const tag of tags) {
-                  tagsEl.createEl('span', { text: tag, cls: 'tag-item' });
+                for (const tagName of tagSet) {
+                  tagsEl.createEl('span', { text: tagName, cls: 'tag-item' });
                 }
               }
             }
@@ -366,11 +392,10 @@ class GalleryView extends ItemView {
 
             const footer = card.createEl('div', { cls: 'card-footer' });
             if (settings.showFolder) {
-              const folderPath = file.parent ? file.parent.path : '/';
-              footer.createEl('div', { text: folderPath, cls: 'card-folder' });
+              footer.createEl('div', { text: getParentPath(file), cls: 'card-folder' });
             }
             if (settings.showDate) {
-              footer.createEl('div', { text: dateStr, cls: 'card-date' });
+              footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
             }
           }
         }
@@ -394,13 +419,12 @@ class GalleryView extends ItemView {
     await renderCards(select.value);
   }
 
-  collectNoteFiles(folder) {
-    let results = [];
+  collectNoteFiles(folder, results = []) {
     for (const child of folder.children) {
       if (child.extension === 'md' || child.extension === 'canvas') {
         results.push(child);
       } else if (child.children) {
-        results.push(...this.collectNoteFiles(child));
+        this.collectNoteFiles(child, results);
       }
     }
     return results;
@@ -409,12 +433,13 @@ class GalleryView extends ItemView {
   async createNewNote(folderPath) {
     const vault = this.app.vault;
     const base = t('untitledNote');
+    const buildPath = (name) => folderPath === '/' ? name : `${folderPath}/${name}`;
     let fileName = `${base}.md`;
-    let filePath = folderPath === '/' ? fileName : `${folderPath}/${fileName}`;
+    let filePath = buildPath(fileName);
     let counter = 1;
     while (vault.getAbstractFileByPath(filePath)) {
       fileName = `${base} ${counter}.md`;
-      filePath = folderPath === '/' ? fileName : `${folderPath}/${fileName}`;
+      filePath = buildPath(fileName);
       counter++;
     }
     await vault.create(filePath, '');
@@ -432,6 +457,7 @@ class GallerySettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
+    this._debouncedSave = debounce(() => this.plugin.saveSettings(), DEBOUNCE_MS);
   }
 
   display() {
@@ -440,97 +466,53 @@ class GallerySettingTab extends PluginSettingTab {
 
     containerEl.createEl('h2', { text: t('settingsTitle') });
 
-    new Setting(containerEl)
-      .setName(t('settingExcludeDirs'))
-      .setDesc(t('settingExcludeDirsDesc'))
-      .addText(text => text
-        .setPlaceholder('assets, templates')
-        .setValue(this.plugin.settings.excludeDirs)
-        .onChange(async (value) => {
-          this.plugin.settings.excludeDirs = value;
-          await this.plugin.saveSettings();
-        }));
+    this._addTextSetting(containerEl, 'settingExcludeDirs', 'settingExcludeDirsDesc', 'assets, templates', 'excludeDirs');
+    this._addTextSetting(containerEl, 'settingDefaultFolder', 'settingDefaultFolderDesc', t('settingDefaultFolderPlaceholder'), 'defaultFolder');
+    this._addNumericSetting(containerEl, 'settingSummaryLength', 'settingSummaryLengthDesc', '150', 'summaryLength');
+    this._addNumericSetting(containerEl, 'settingCardMinWidth', 'settingCardMinWidthDesc', '200', 'cardMinWidth');
+    this._addNumericSetting(containerEl, 'settingCardMinHeight', 'settingCardMinHeightDesc', '160', 'cardMinHeight');
+    this._addToggleSetting(containerEl, 'settingShowTags', 'settingShowTagsDesc', 'showTags');
+    this._addToggleSetting(containerEl, 'settingShowFolder', 'settingShowFolderDesc', 'showFolder');
+    this._addToggleSetting(containerEl, 'settingShowDate', 'settingShowDateDesc', 'showDate');
+  }
 
+  _addTextSetting(containerEl, nameKey, descKey, placeholder, settingsKey) {
     new Setting(containerEl)
-      .setName(t('settingDefaultFolder'))
-      .setDesc(t('settingDefaultFolderDesc'))
+      .setName(t(nameKey))
+      .setDesc(t(descKey))
       .addText(text => text
-        .setPlaceholder(t('settingDefaultFolderPlaceholder'))
-        .setValue(this.plugin.settings.defaultFolder)
-        .onChange(async (value) => {
-          this.plugin.settings.defaultFolder = value;
-          await this.plugin.saveSettings();
+        .setPlaceholder(placeholder)
+        .setValue(this.plugin.settings[settingsKey])
+        .onChange((value) => {
+          this.plugin.settings[settingsKey] = value;
+          this._debouncedSave();
         }));
+  }
 
+  _addNumericSetting(containerEl, nameKey, descKey, placeholder, settingsKey) {
     new Setting(containerEl)
-      .setName(t('settingSummaryLength'))
-      .setDesc(t('settingSummaryLengthDesc'))
+      .setName(t(nameKey))
+      .setDesc(t(descKey))
       .addText(text => text
-        .setPlaceholder('150')
-        .setValue(String(this.plugin.settings.summaryLength))
-        .onChange(async (value) => {
+        .setPlaceholder(placeholder)
+        .setValue(String(this.plugin.settings[settingsKey]))
+        .onChange((value) => {
           const num = parseInt(value);
           if (!isNaN(num) && num > 0) {
-            this.plugin.settings.summaryLength = num;
-            await this.plugin.saveSettings();
+            this.plugin.settings[settingsKey] = num;
+            this._debouncedSave();
           }
         }));
+  }
 
+  _addToggleSetting(containerEl, nameKey, descKey, settingsKey) {
     new Setting(containerEl)
-      .setName(t('settingCardMinWidth'))
-      .setDesc(t('settingCardMinWidthDesc'))
-      .addText(text => text
-        .setPlaceholder('200')
-        .setValue(String(this.plugin.settings.cardMinWidth))
-        .onChange(async (value) => {
-          const num = parseInt(value);
-          if (!isNaN(num) && num > 0) {
-            this.plugin.settings.cardMinWidth = num;
-            await this.plugin.saveSettings();
-          }
-        }));
-
-    new Setting(containerEl)
-      .setName(t('settingCardMinHeight'))
-      .setDesc(t('settingCardMinHeightDesc'))
-      .addText(text => text
-        .setPlaceholder('160')
-        .setValue(String(this.plugin.settings.cardMinHeight))
-        .onChange(async (value) => {
-          const num = parseInt(value);
-          if (!isNaN(num) && num > 0) {
-            this.plugin.settings.cardMinHeight = num;
-            await this.plugin.saveSettings();
-          }
-        }));
-
-    new Setting(containerEl)
-      .setName(t('settingShowTags'))
-      .setDesc(t('settingShowTagsDesc'))
+      .setName(t(nameKey))
+      .setDesc(t(descKey))
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showTags)
+        .setValue(this.plugin.settings[settingsKey])
         .onChange(async (value) => {
-          this.plugin.settings.showTags = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName(t('settingShowFolder'))
-      .setDesc(t('settingShowFolderDesc'))
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showFolder)
-        .onChange(async (value) => {
-          this.plugin.settings.showFolder = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName(t('settingShowDate'))
-      .setDesc(t('settingShowDateDesc'))
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showDate)
-        .onChange(async (value) => {
-          this.plugin.settings.showDate = value;
+          this.plugin.settings[settingsKey] = value;
           await this.plugin.saveSettings();
         }));
   }
@@ -572,22 +554,22 @@ class GalleryLauncherPlugin extends Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
     this.updateCSSVariables();
-    this.refreshViews();
+    await this.refreshViews();
   }
 
-  refreshViews() {
+  async refreshViews() {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view;
       if (view && view.onOpen) {
-        view.onOpen();
+        await view.onOpen();
       }
     }
   }
 
   updateCSSVariables() {
-    document.body.style.setProperty('--gallery-card-min-width', `${this.settings.cardMinWidth}px`);
-    document.body.style.setProperty('--gallery-card-min-height', `${this.settings.cardMinHeight}px`);
+    document.body.style.setProperty(CSS_VAR_MIN_WIDTH, `${this.settings.cardMinWidth}px`);
+    document.body.style.setProperty(CSS_VAR_MIN_HEIGHT, `${this.settings.cardMinHeight}px`);
   }
 
   async activateView() {
@@ -602,8 +584,8 @@ class GalleryLauncherPlugin extends Plugin {
   }
 
   onunload() {
-    document.body.style.removeProperty('--gallery-card-min-width');
-    document.body.style.removeProperty('--gallery-card-min-height');
+    document.body.style.removeProperty(CSS_VAR_MIN_WIDTH);
+    document.body.style.removeProperty(CSS_VAR_MIN_HEIGHT);
   }
 }
 
