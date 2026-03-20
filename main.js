@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = {
   showTags: true,
   showFolder: true,
   showDate: true,
+  openOnStartup: false,
   sortBy: 'mtime',
   sortOrder: 'desc',
   groupByMonth: true,
@@ -88,6 +89,8 @@ const TRANSLATIONS = {
     settingDefaultFolder: 'Default folder',
     settingDefaultFolderDesc: 'Folder selected by default when opening the gallery. Leave empty to restore last viewed folder',
     settingDefaultFolderPlaceholder: 'Leave empty to restore last folder',
+    settingOpenOnStartup: 'Open on startup',
+    settingOpenOnStartupDesc: 'Automatically open the gallery when Obsidian starts',
     settingCardMinWidth: 'Card min width (px)',
     settingCardMinWidthDesc: 'Minimum width of each card in the grid layout',
     settingCardMinHeight: 'Card min height (px)',
@@ -157,6 +160,8 @@ const TRANSLATIONS = {
     settingDefaultFolder: '默认选中的目录',
     settingDefaultFolderDesc: '打开画廊时默认选中的目录名称，留空则恢复上次浏览的目录',
     settingDefaultFolderPlaceholder: '恢复上次浏览的目录',
+    settingOpenOnStartup: '启动时打开',
+    settingOpenOnStartupDesc: '启动 Obsidian 时自动打开画廊视图',
     settingCardMinWidth: '卡片最小宽度 (px)',
     settingCardMinWidthDesc: '网格布局中每张卡片的最小宽度',
     settingCardMinHeight: '卡片最小高度 (px)',
@@ -1271,6 +1276,7 @@ class GallerySettingTab extends PluginSettingTab {
 
     containerEl.createEl('h2', { text: t('settingsTitle') });
 
+    this._addToggleSetting(containerEl, 'settingOpenOnStartup', 'settingOpenOnStartupDesc', 'openOnStartup');
     this._addTextSetting(containerEl, 'settingExcludeDirs', 'settingExcludeDirsDesc', 'assets, templates', 'excludeDirs');
     this._addTextSetting(containerEl, 'settingDefaultFolder', 'settingDefaultFolderDesc', t('settingDefaultFolderPlaceholder'), 'defaultFolder');
     this._addNumericSetting(containerEl, 'settingCardMinWidth', 'settingCardMinWidthDesc', '200', 'cardMinWidth');
@@ -1349,6 +1355,13 @@ class GalleryLauncherPlugin extends Plugin {
         this.activateView();
       },
     });
+
+    // Auto-open on startup
+    if (this.settings.openOnStartup) {
+      this.app.workspace.onLayoutReady(() => {
+        this.activateView();
+      });
+    }
   }
 
   async loadSettings() {
