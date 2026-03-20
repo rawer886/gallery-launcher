@@ -7,9 +7,17 @@ const VIEW_TYPE = 'gallery-view';
 const RENDER_BATCH_SIZE = 100;
 const FOLDER_ALL = '__all__';
 const GROUP_FLAT = '__flat__';
+const FAVORITES_GROUP_KEY = '__favorites__';
+const FM_KEY_FAVORITE = 'gallery-favorite';
+const FM_KEY_COLOR = 'gallery-color';
 const CSS_VAR_MIN_WIDTH = '--gallery-card-min-width';
 const CSS_VAR_MIN_HEIGHT = '--gallery-card-min-height';
 const DEBOUNCE_MS = 500;
+const STAR_SVG_PATH = '12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2';
+
+function starSvg(size, strokeWidth = 2) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="#f5a623" stroke="#f5a623" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"><polygon points="${STAR_SVG_PATH}"/></svg>`;
+}
 
 const CARD_COLORS = [
   { name: 'red',    value: '#fc3d39' },
@@ -110,6 +118,9 @@ const TRANSLATIONS = {
     newFolder: 'New folder',
     newFolderTitle: 'New folder',
     newFolderPlaceholder: 'Folder name',
+    favorite: 'Favorite',
+    unfavorite: 'Unfavorite',
+    favoritesSection: 'Favorites',
   },
   zh: {
     allFolders: '全部目录',
@@ -178,6 +189,9 @@ const TRANSLATIONS = {
     newFolder: '新建目录',
     newFolderTitle: '新建目录',
     newFolderPlaceholder: '目录名称',
+    favorite: '收藏',
+    unfavorite: '取消收藏',
+    favoritesSection: '收藏夹',
   },
 };
 
@@ -530,7 +544,7 @@ class ColorPickerModal extends Modal {
 
     // Read current color from frontmatter
     const cache = this.app.metadataCache.getFileCache(file);
-    const currentColor = cache?.frontmatter?.['gallery-color'] || '';
+    const currentColor = cache?.frontmatter?.[FM_KEY_COLOR] || '';
 
     // Color dots grid
     const grid = contentEl.createEl('div', { cls: 'gallery-color-grid' });
@@ -543,7 +557,7 @@ class ColorPickerModal extends Modal {
       if (currentColor === color.name) dot.addClass('is-active');
       dot.addEventListener('click', async () => {
         await this.app.fileManager.processFrontMatter(file, (fm) => {
-          fm['gallery-color'] = color.name;
+          fm[FM_KEY_COLOR] = color.name;
         });
         this.close();
         // Wait for metadataCache to update before refreshing
@@ -561,7 +575,7 @@ class ColorPickerModal extends Modal {
     if (!currentColor) noneBtn.addClass('is-active');
     noneBtn.addEventListener('click', async () => {
       await this.app.fileManager.processFrontMatter(file, (fm) => {
-        delete fm['gallery-color'];
+        delete fm[FM_KEY_COLOR];
       });
       this.close();
       setTimeout(async () => {
@@ -832,9 +846,8 @@ class GalleryView extends ItemView {
     });
     collapseAllBtn.addEventListener('click', async () => {
       const keys = [];
-      cardArea.querySelectorAll('.gallery-month').forEach(el => {
-        const spans = el.querySelectorAll('span:not(.gallery-month-arrow):not(.gallery-month-count)');
-        if (spans.length) keys.push(spans[0].textContent);
+      cardArea.querySelectorAll('.gallery-month[data-group-key]').forEach(el => {
+        keys.push(el.dataset.groupKey);
       });
       settings.collapsedGroups = keys;
       await this.plugin.saveData(settings);
@@ -895,23 +908,251 @@ class GalleryView extends ItemView {
       // Batched render
       let currentLimit = RENDER_BATCH_SIZE;
 
+      const toggleGroupCollapse = async (key, arrowEl, gridEl) => {
+        const idx = settings.collapsedGroups.indexOf(key);
+        if (idx >= 0) {
+          settings.collapsedGroups.splice(idx, 1);
+        } else {
+          settings.collapsedGroups.push(key);
+        }
+        await this.plugin.saveData(settings);
+        const collapsed = settings.collapsedGroups.includes(key);
+        arrowEl.classList.toggle('is-collapsed', collapsed);
+        gridEl.style.display = collapsed ? 'none' : '';
+      };
+
+      // Render a single card into a grid container
+      const renderSingleCard = async (grid, file) => {
+        let summary = '';
+        try {
+          const content = await this.app.vault.cachedRead(file);
+          summary = stripMarkdown(content, settings.summaryLength);
+          if (summary.length >= settings.summaryLength) {
+            summary += '...';
+          }
+        } catch (e) { /* ignore */ }
+
+        const card = grid.createEl('div', { cls: 'gallery-card' });
+        const cardCache = this.app.metadataCache.getFileCache(file);
+        const cardColor = cardCache?.frontmatter?.[FM_KEY_COLOR];
+        if (cardColor) {
+          const colorDef = CARD_COLORS.find(c => c.name === cardColor);
+          if (colorDef) {
+            card.style.borderColor = colorDef.value;
+            card.classList.add('gallery-card-colored');
+          }
+        }
+
+        const isFavorited = cardCache?.frontmatter?.[FM_KEY_FAVORITE] === true;
+
+        card.addEventListener('click', () => {
+          this.app.workspace.openLinkText(file.path, '');
+        });
+        card.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = new Menu();
+
+          // -- 收藏/取消收藏 (canvas 文件不支持) --
+          if (file.extension !== 'canvas') {
+            const curCache = this.app.metadataCache.getFileCache(file);
+            const curFav = curCache?.frontmatter?.[FM_KEY_FAVORITE] === true;
+            menu.addItem((item) => {
+              item.setTitle(curFav ? t('unfavorite') : t('favorite'))
+                .setIcon(curFav ? 'star-off' : 'star')
+                .onClick(async () => {
+                  await this.app.fileManager.processFrontMatter(file, (fm) => {
+                    if (curFav) {
+                      delete fm[FM_KEY_FAVORITE];
+                    } else {
+                      fm[FM_KEY_FAVORITE] = true;
+                    }
+                  });
+                  setTimeout(async () => {
+                    await renderCards(currentFolder);
+                  }, 200);
+                });
+            });
+            menu.addSeparator();
+          }
+
+          // -- 创建 --
+          const cardDir = currentFolder === FOLDER_ALL ? '/' : getParentPath(file);
+          menu.addItem((item) => {
+            item.setTitle(t('newNote'))
+              .setIcon('plus')
+              .onClick(() => {
+                new ConfirmModal(this.app, {
+                  title: t('newNoteTitle'),
+                  message: t('newNoteConfirmDir', { dir: cardDir }),
+                  confirmText: t('confirm'),
+                  onConfirm: async () => {
+                    await this.createNewNote(cardDir);
+                    await renderCards(currentFolder);
+                  },
+                }).open();
+              });
+          });
+          menu.addItem((item) => {
+            item.setTitle(t('newFolder'))
+              .setIcon('folder-plus')
+              .onClick(() => openNewFolderModal(cardDir));
+          });
+          menu.addSeparator();
+          // -- 设置颜色 --
+          if (file.extension !== 'canvas') {
+            menu.addItem((item) => {
+              item.setTitle(t('cardColor'))
+                .setIcon('palette')
+                .onClick(() => {
+                  new ColorPickerModal(this.app, file, async () => {
+                    await renderCards(currentFolder);
+                  }).open();
+                });
+            });
+          }
+          // -- 编辑时间 --
+          menu.addItem((item) => {
+            item.setTitle(t('editTime'))
+              .setIcon('clock')
+              .onClick(() => {
+                new EditTimeModal(this.app, file, async () => {
+                  await renderCards(currentFolder);
+                }).open();
+              });
+          });
+          menu.addSeparator();
+          // -- 在系统资源管理器中显示 --
+          menu.addItem((item) => {
+            item.setTitle(t('revealInExplorer'))
+              .setIcon('folder-open')
+              .onClick(() => {
+                const fullPath = this.app.vault.adapter.getFullPath(file.path);
+                const { shell } = require('electron');
+                shell.showItemInFolder(fullPath);
+              });
+          });
+          menu.addSeparator();
+          // -- 危险操作 --
+          menu.addItem((item) => {
+            item.setTitle(t('deleteNote'))
+              .setIcon('trash')
+              .onClick(() => {
+                new ConfirmModal(this.app, {
+                  title: t('deleteNoteTitle'),
+                  message: t('deleteNoteConfirm', { name: file.basename }),
+                  confirmText: t('delete'),
+                  confirmStyle: 'danger',
+                  onConfirm: async () => {
+                    await this.app.vault.trash(file, true);
+                    await renderCards(currentFolder);
+                  },
+                }).open();
+              });
+          });
+          menu.showAtMouseEvent(e);
+        });
+
+        const body = card.createEl('div');
+        body.createEl('div', { text: file.basename, cls: 'card-title' });
+        if (isFavorited) {
+          const starSpan = card.createEl('span', { cls: 'gallery-card-star' });
+          starSpan.innerHTML = starSvg(12, 1.5);
+        }
+
+        // Tags
+        if (settings.showTags) {
+          const tagSet = new Set();
+          if (cardCache) {
+            if (cardCache.frontmatter && cardCache.frontmatter.tags) {
+              const fmTags = cardCache.frontmatter.tags;
+              if (Array.isArray(fmTags)) {
+                fmTags.forEach(tag => tagSet.add(String(tag).replace(/^#/, '')));
+              } else if (typeof fmTags === 'string') {
+                tagSet.add(fmTags.replace(/^#/, ''));
+              }
+            }
+            if (cardCache.tags) {
+              for (const tagRef of cardCache.tags) {
+                tagSet.add(tagRef.tag.replace(/^#/, ''));
+              }
+            }
+          }
+          if (tagSet.size > 0) {
+            const tagsEl = body.createEl('div', { cls: 'card-tags' });
+            for (const tagName of tagSet) {
+              tagsEl.createEl('span', { text: tagName, cls: 'tag-item' });
+            }
+          }
+        }
+
+        body.createEl('div', { text: summary || t('noContent'), cls: 'card-content' });
+
+        const footer = card.createEl('div', { cls: 'card-footer' });
+        if (settings.showFolder) {
+          const folderEl = footer.createEl('div', { cls: 'card-folder' });
+          const folderSpan = folderEl.createEl('span', { text: getParentPath(file) });
+          requestAnimationFrame(() => {
+            const overflow = folderSpan.scrollWidth - folderEl.clientWidth;
+            if (overflow > 0) {
+              folderEl.style.setProperty('--folder-overflow', overflow);
+            } else {
+              folderEl.classList.add('no-overflow');
+            }
+          });
+        }
+        if (settings.showDate) {
+          footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
+        }
+      };
+
       const renderBatch = async (limit) => {
         cardArea.empty();
         const visibleFiles = files.slice(0, limit);
 
-        // Group
+        // ── Favorites section ──
+        const favoriteFiles = visibleFiles.filter(f => {
+          const cache = this.app.metadataCache.getFileCache(f);
+          return cache?.frontmatter?.[FM_KEY_FAVORITE] === true;
+        });
+        if (favoriteFiles.length > 0) {
+          const favCollapsed = settings.collapsedGroups.includes(FAVORITES_GROUP_KEY);
+          const favHeader = cardArea.createEl('div', { cls: 'gallery-month gallery-favorites-header' });
+          favHeader.dataset.groupKey = FAVORITES_GROUP_KEY;
+          const favArrow = favHeader.createSpan({ cls: 'gallery-month-arrow' });
+          favArrow.textContent = '\u25BC';
+          if (favCollapsed) favArrow.classList.add('is-collapsed');
+          const favIcon = favHeader.createSpan({ cls: 'gallery-favorites-icon' });
+          favIcon.innerHTML = starSvg(14);
+          const favTitle = favHeader.createSpan({ text: t('favoritesSection'), cls: 'gallery-month-title' });
+          favHeader.createSpan({ text: t('groupNoteCount', { count: favoriteFiles.length }), cls: 'gallery-month-count' });
+
+          const favGrid = cardArea.createEl('div', { cls: 'gallery-container' });
+          if (favCollapsed) favGrid.style.display = 'none';
+
+          const toggleFavCollapse = () => toggleGroupCollapse(FAVORITES_GROUP_KEY, favArrow, favGrid);
+          favArrow.addEventListener('click', toggleFavCollapse);
+          favTitle.addEventListener('click', toggleFavCollapse);
+
+          for (const file of favoriteFiles) {
+            await renderSingleCard(favGrid, file);
+          }
+
+          // Divider
+          cardArea.createEl('div', { cls: 'gallery-favorites-divider' });
+        }
+
+        // ── Regular groups ──
         const groupEnabled = settings.groupByMonth !== false;
         const groups = {};
         if (groupEnabled) {
           if (sortBy === 'title') {
-            // Group by folder when sorting by title
             for (const file of visibleFiles) {
               const folder = getParentPath(file);
               if (!groups[folder]) groups[folder] = [];
               groups[folder].push(file);
             }
           } else {
-            // Group by month when sorting by time
             const timeKey = (sortBy === 'ctime') ? 'ctime' : 'mtime';
             for (const file of visibleFiles) {
               const month = formatDate(new Date(file.stat[timeKey]), false);
@@ -923,7 +1164,6 @@ class GalleryView extends ItemView {
           groups[GROUP_FLAT] = visibleFiles;
         }
 
-        // Sort group keys: folders by depth then alphabetically; time groups keep insertion order
         const groupKeys = Object.keys(groups);
         if (groupEnabled && sortBy === 'title') {
           groupKeys.sort((a, b) => {
@@ -939,23 +1179,13 @@ class GalleryView extends ItemView {
           const isCollapsed = groupEnabled && settings.collapsedGroups.includes(month);
           if (groupEnabled) {
             const monthEl = cardArea.createEl('div', { cls: 'gallery-month' });
+            monthEl.dataset.groupKey = month;
             const arrow = monthEl.createSpan({ cls: 'gallery-month-arrow' });
             arrow.textContent = '\u25BC';
             if (isCollapsed) arrow.classList.add('is-collapsed');
             const titleSpan = monthEl.createSpan({ text: month, cls: 'gallery-month-title' });
             monthEl.createSpan({ text: t('groupNoteCount', { count: monthFiles.length }), cls: 'gallery-month-count' });
-            const toggleCollapse = async () => {
-              const idx = settings.collapsedGroups.indexOf(month);
-              if (idx >= 0) {
-                settings.collapsedGroups.splice(idx, 1);
-              } else {
-                settings.collapsedGroups.push(month);
-              }
-              await this.plugin.saveData(settings);
-              const collapsed = settings.collapsedGroups.includes(month);
-              arrow.classList.toggle('is-collapsed', collapsed);
-              grid.style.display = collapsed ? 'none' : '';
-            };
+            const toggleCollapse = () => toggleGroupCollapse(month, arrow, grid);
             arrow.addEventListener('click', toggleCollapse);
             titleSpan.addEventListener('click', toggleCollapse);
           }
@@ -964,156 +1194,7 @@ class GalleryView extends ItemView {
           if (isCollapsed) grid.style.display = 'none';
 
           for (const file of monthFiles) {
-            let summary = '';
-            try {
-              const content = await this.app.vault.cachedRead(file);
-              summary = stripMarkdown(content, settings.summaryLength);
-              if (summary.length >= settings.summaryLength) {
-                summary += '...';
-              }
-            } catch (e) { /* ignore */ }
-
-            const card = grid.createEl('div', { cls: 'gallery-card' });
-            const cardCache = this.app.metadataCache.getFileCache(file);
-            const cardColor = cardCache?.frontmatter?.['gallery-color'];
-            if (cardColor) {
-              const colorDef = CARD_COLORS.find(c => c.name === cardColor);
-              if (colorDef) {
-                card.style.borderColor = colorDef.value;
-                card.classList.add('gallery-card-colored');
-              }
-            }
-            card.addEventListener('click', () => {
-              this.app.workspace.openLinkText(file.path, '');
-            });
-            card.addEventListener('contextmenu', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const menu = new Menu();
-              // -- 创建 --
-              const cardDir = currentFolder === FOLDER_ALL ? '/' : getParentPath(file);
-              menu.addItem((item) => {
-                item.setTitle(t('newNote'))
-                  .setIcon('plus')
-                  .onClick(() => {
-                    new ConfirmModal(this.app, {
-                      title: t('newNoteTitle'),
-                      message: t('newNoteConfirmDir', { dir: cardDir }),
-                      confirmText: t('confirm'),
-                      onConfirm: async () => {
-                        await this.createNewNote(cardDir);
-                        await renderCards(currentFolder);
-                      },
-                    }).open();
-                  });
-              });
-              menu.addItem((item) => {
-                item.setTitle(t('newFolder'))
-                  .setIcon('folder-plus')
-                  .onClick(() => openNewFolderModal(cardDir));
-              });
-              menu.addSeparator();
-              // -- 设置颜色 --
-              menu.addItem((item) => {
-                item.setTitle(t('cardColor'))
-                  .setIcon('palette')
-                  .onClick(() => {
-                    new ColorPickerModal(this.app, file, async () => {
-                      await renderCards(currentFolder);
-                    }).open();
-                  });
-              });
-              // -- 编辑时间 --
-              menu.addItem((item) => {
-                item.setTitle(t('editTime'))
-                  .setIcon('clock')
-                  .onClick(() => {
-                    new EditTimeModal(this.app, file, async () => {
-                      await renderCards(currentFolder);
-                    }).open();
-                  });
-              });
-              menu.addSeparator();
-              // -- 在系统资源管理器中显示 --
-              menu.addItem((item) => {
-                item.setTitle(t('revealInExplorer'))
-                  .setIcon('folder-open')
-                  .onClick(() => {
-                    const fullPath = this.app.vault.adapter.getFullPath(file.path);
-                    const { shell } = require('electron');
-                    shell.showItemInFolder(fullPath);
-                  });
-              });
-              menu.addSeparator();
-              // -- 危险操作 --
-              menu.addItem((item) => {
-                item.setTitle(t('deleteNote'))
-                  .setIcon('trash')
-                  .onClick(() => {
-                    new ConfirmModal(this.app, {
-                      title: t('deleteNoteTitle'),
-                      message: t('deleteNoteConfirm', { name: file.basename }),
-                      confirmText: t('delete'),
-                      confirmStyle: 'danger',
-                      onConfirm: async () => {
-                        await this.app.vault.trash(file, true);
-                        await renderCards(currentFolder);
-                      },
-                    }).open();
-                  });
-              });
-              menu.showAtMouseEvent(e);
-            });
-
-            const body = card.createEl('div');
-            body.createEl('div', { text: file.basename, cls: 'card-title' });
-
-            // Tags
-            if (settings.showTags) {
-              const cache = this.app.metadataCache.getFileCache(file);
-              const tagSet = new Set();
-              if (cache) {
-                if (cache.frontmatter && cache.frontmatter.tags) {
-                  const fmTags = cache.frontmatter.tags;
-                  if (Array.isArray(fmTags)) {
-                    fmTags.forEach(tag => tagSet.add(String(tag).replace(/^#/, '')));
-                  } else if (typeof fmTags === 'string') {
-                    tagSet.add(fmTags.replace(/^#/, ''));
-                  }
-                }
-                if (cache.tags) {
-                  for (const tagRef of cache.tags) {
-                    tagSet.add(tagRef.tag.replace(/^#/, ''));
-                  }
-                }
-              }
-              if (tagSet.size > 0) {
-                const tagsEl = body.createEl('div', { cls: 'card-tags' });
-                for (const tagName of tagSet) {
-                  tagsEl.createEl('span', { text: tagName, cls: 'tag-item' });
-                }
-              }
-            }
-
-            body.createEl('div', { text: summary || t('noContent'), cls: 'card-content' });
-
-            const footer = card.createEl('div', { cls: 'card-footer' });
-            if (settings.showFolder) {
-              const folderEl = footer.createEl('div', { cls: 'card-folder' });
-              const folderSpan = folderEl.createEl('span', { text: getParentPath(file) });
-              // Defer overflow measurement to after DOM layout
-              requestAnimationFrame(() => {
-                const overflow = folderSpan.scrollWidth - folderEl.clientWidth;
-                if (overflow > 0) {
-                  folderEl.style.setProperty('--folder-overflow', overflow);
-                } else {
-                  folderEl.classList.add('no-overflow');
-                }
-              });
-            }
-            if (settings.showDate) {
-              footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
-            }
+            await renderSingleCard(grid, file);
           }
         }
 

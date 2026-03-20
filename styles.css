@@ -155,6 +155,7 @@
 
 /* ── Card ── */
 .gallery-card {
+  position: relative;
   border: 1px solid var(--background-modifier-border);
   border-radius: 10px;
   padding: 16px;
@@ -541,4 +542,38 @@
 .gallery-color-none.is-active {
   border-color: var(--text-normal);
   color: var(--text-normal);
+}
+
+/* ── Favorite star badge (top-right corner) ── */
+.gallery-card-star {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  pointer-events: none;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: gallery-star-appear 0.3s ease;
+}
+@keyframes gallery-star-appear {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Favorites section header ── */
+.gallery-favorites-header .gallery-favorites-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
+  line-height: 1;
+}
+
+/* ── Favorites divider ── */
+.gallery-favorites-divider {
+  height: 1px;
+  margin: 4px 8px 0;
+  background: var(--background-modifier-border);
+  opacity: 0.6;
 }
