@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   defaultFolder: '',
   lastSelectedFolder: '',
   summaryLength: 150,
+  collapsedGroups: [],
   cardMinWidth: 200,
   cardMinHeight: 160,
   showTags: true,
@@ -69,6 +70,8 @@ const TRANSLATIONS = {
     loadMore: 'Load more ({remaining} remaining)',
     noteCount: 'Total {count} notes',
     groupNoteCount: '{count} notes',
+    expandAll: 'Expand all groups',
+    collapseAll: 'Collapse all groups',
     refresh: 'Refresh',
     openGallery: 'Open Gallery',
     settingsTitle: 'Gallery Launcher Settings',
@@ -132,6 +135,8 @@ const TRANSLATIONS = {
     loadMore: '加载更多（剩余 {remaining} 篇）',
     noteCount: '总笔记篇数 {count} 篇',
     groupNoteCount: '{count} 篇',
+    expandAll: '展开全部分组',
+    collapseAll: '折叠全部分组',
     refresh: '刷新',
     openGallery: '打开画廊',
     settingsTitle: 'Gallery Launcher 设置',
@@ -574,16 +579,21 @@ class GalleryView extends ItemView {
     // Info bar — note count (left) + sort button (right)
     const infoBar = container.createEl('div', { cls: 'gallery-info-bar' });
     const noteCountEl = infoBar.createEl('span', { cls: 'gallery-note-count' });
-    const sortBtn = infoBar.createEl('button', { cls: 'gallery-sort-btn', attr: { 'aria-label': t('sort') } });
+    const infoBarRight = infoBar.createEl('div', { cls: 'gallery-info-bar-right' });
+    const expandAllBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-collapse-toggle', attr: { 'aria-label': t('expandAll') } });
+    expandAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>';
+    const collapseAllBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-collapse-toggle', attr: { 'aria-label': t('collapseAll') } });
+    collapseAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>';
+    const sortBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn', attr: { 'aria-label': t('sort') } });
     sortBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="m3 17 3 3 3-3"/><path d="M6 18V4"/></svg>';
 
     const SORT_OPTIONS = [
+      { key: 'title', order: 'asc',  label: t('sortTitleAsc') },
+      { key: 'title', order: 'desc', label: t('sortTitleDesc') },
       { key: 'ctime', order: 'desc', label: t('sortCTimeDesc') },
       { key: 'ctime', order: 'asc',  label: t('sortCTimeAsc') },
       { key: 'mtime', order: 'desc', label: t('sortMTimeDesc') },
       { key: 'mtime', order: 'asc',  label: t('sortMTimeAsc') },
-      { key: 'title', order: 'asc',  label: t('sortTitleAsc') },
-      { key: 'title', order: 'desc', label: t('sortTitleDesc') },
     ];
 
     sortBtn.addEventListener('click', (e) => {
@@ -636,6 +646,24 @@ class GalleryView extends ItemView {
           });
       });
       menu.showAtMouseEvent(e);
+    });
+
+    expandAllBtn.addEventListener('click', async () => {
+      settings.collapsedGroups = [];
+      await this.plugin.saveData(settings);
+      cardArea.querySelectorAll('.gallery-month-arrow').forEach(a => a.classList.remove('is-collapsed'));
+      cardArea.querySelectorAll('.gallery-container').forEach(g => g.style.display = '');
+    });
+    collapseAllBtn.addEventListener('click', async () => {
+      const keys = [];
+      cardArea.querySelectorAll('.gallery-month').forEach(el => {
+        const spans = el.querySelectorAll('span:not(.gallery-month-arrow):not(.gallery-month-count)');
+        if (spans.length) keys.push(spans[0].textContent);
+      });
+      settings.collapsedGroups = keys;
+      await this.plugin.saveData(settings);
+      cardArea.querySelectorAll('.gallery-month-arrow').forEach(a => a.classList.add('is-collapsed'));
+      cardArea.querySelectorAll('.gallery-container').forEach(g => g.style.display = 'none');
     });
 
     // ------------------------------------------------------------------
@@ -691,27 +719,68 @@ class GalleryView extends ItemView {
         const visibleFiles = files.slice(0, limit);
 
         // Group
-        const groupByMonth = settings.groupByMonth !== false;
+        const groupEnabled = settings.groupByMonth !== false;
         const groups = {};
-        if (groupByMonth) {
-          const timeKey = (sortBy === 'ctime') ? 'ctime' : 'mtime';
-          for (const file of visibleFiles) {
-            const month = formatDate(new Date(file.stat[timeKey]), false);
-            if (!groups[month]) groups[month] = [];
-            groups[month].push(file);
+        if (groupEnabled) {
+          if (sortBy === 'title') {
+            // Group by folder when sorting by title
+            for (const file of visibleFiles) {
+              const folder = getParentPath(file);
+              if (!groups[folder]) groups[folder] = [];
+              groups[folder].push(file);
+            }
+          } else {
+            // Group by month when sorting by time
+            const timeKey = (sortBy === 'ctime') ? 'ctime' : 'mtime';
+            for (const file of visibleFiles) {
+              const month = formatDate(new Date(file.stat[timeKey]), false);
+              if (!groups[month]) groups[month] = [];
+              groups[month].push(file);
+            }
           }
         } else {
           groups[GROUP_FLAT] = visibleFiles;
         }
 
-        for (const [month, monthFiles] of Object.entries(groups)) {
-          if (groupByMonth) {
+        // Sort group keys: folders by depth then alphabetically; time groups keep insertion order
+        const groupKeys = Object.keys(groups);
+        if (groupEnabled && sortBy === 'title') {
+          groupKeys.sort((a, b) => {
+            const depthA = (a.match(/\//g) || []).length;
+            const depthB = (b.match(/\//g) || []).length;
+            if (depthA !== depthB) return depthA - depthB;
+            return dir * a.localeCompare(b, 'zh');
+          });
+        }
+
+        for (const month of groupKeys) {
+          const monthFiles = groups[month];
+          const isCollapsed = groupEnabled && settings.collapsedGroups.includes(month);
+          if (groupEnabled) {
             const monthEl = cardArea.createEl('div', { cls: 'gallery-month' });
-            monthEl.createSpan({ text: month });
+            const arrow = monthEl.createSpan({ cls: 'gallery-month-arrow' });
+            arrow.textContent = '\u25BC';
+            if (isCollapsed) arrow.classList.add('is-collapsed');
+            const titleSpan = monthEl.createSpan({ text: month, cls: 'gallery-month-title' });
             monthEl.createSpan({ text: t('groupNoteCount', { count: monthFiles.length }), cls: 'gallery-month-count' });
+            const toggleCollapse = async () => {
+              const idx = settings.collapsedGroups.indexOf(month);
+              if (idx >= 0) {
+                settings.collapsedGroups.splice(idx, 1);
+              } else {
+                settings.collapsedGroups.push(month);
+              }
+              await this.plugin.saveData(settings);
+              const collapsed = settings.collapsedGroups.includes(month);
+              arrow.classList.toggle('is-collapsed', collapsed);
+              grid.style.display = collapsed ? 'none' : '';
+            };
+            arrow.addEventListener('click', toggleCollapse);
+            titleSpan.addEventListener('click', toggleCollapse);
           }
 
           const grid = cardArea.createEl('div', { cls: 'gallery-container' });
+          if (isCollapsed) grid.style.display = 'none';
 
           for (const file of monthFiles) {
             let summary = '';

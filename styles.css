@@ -28,11 +28,12 @@
   padding: 5px 14px;
   border: none;
   border-radius: 8px;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.08) !important;
   color: var(--text-muted);
   font-size: 0.82em;
   font-weight: 500;
   cursor: pointer;
+  box-shadow: none !important;
   transition: all 0.18s ease;
   white-space: nowrap;
   flex-shrink: 0;
@@ -42,8 +43,8 @@
   color: var(--text-normal);
 }
 .gallery-folder-tab.is-active {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
   font-weight: 600;
 }
 .gallery-folder-tab.is-pinned .pin-icon {
@@ -75,17 +76,29 @@
   letter-spacing: 0.02em;
 }
 
+/* ── Info bar right group ── */
+.gallery-info-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.gallery-info-bar-right .gallery-sort-btn:last-child {
+  margin-left: 4px;
+}
+
 /* ── Sort button — ghost style ── */
 .gallery-sort-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 8px;
+  padding: 4px 6px;
   border: none;
+  outline: none;
   border-radius: 6px;
   background: transparent;
   color: var(--text-faint);
   cursor: pointer;
+  box-shadow: none !important;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .gallery-sort-btn:hover {
@@ -103,23 +116,41 @@
 
 /* ── Month group header ── */
 .gallery-month {
-  grid-column: 1 / -1;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
   font-size: 0.85em;
   font-weight: 600;
   color: var(--text-normal);
-  padding: 14px 8px 2px;
+  padding: 8px;
   margin: 0;
+  border-radius: 6px;
+}
+.gallery-month-arrow,
+.gallery-month-title {
+  cursor: pointer;
+}
+.gallery-month-arrow:hover,
+.gallery-month-title:hover {
+  opacity: 0.7;
 }
 .gallery-month:first-child {
   padding-top: 14px;
+}
+.gallery-month-arrow {
+  font-size: 0.7em;
+  display: inline-block;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.gallery-month-arrow.is-collapsed {
+  transform: rotate(-90deg);
 }
 .gallery-month-count {
   font-size: 0.82em;
   font-weight: 400;
   color: var(--text-faint);
+  margin-left: auto;
 }
 
 /* ── Card ── */
@@ -241,6 +272,7 @@
   color: var(--text-muted);
   font-size: 0.82em;
   cursor: pointer;
+  box-shadow: none !important;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .gallery-load-more button:hover {
@@ -280,15 +312,20 @@
   font-size: 0.9em;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  box-shadow: none !important;
+  transition: filter 0.15s ease;
 }
 .gallery-confirm-btn:hover {
-  opacity: 0.85;
+  filter: brightness(0.92);
 }
 .gallery-confirm-btn-cancel {
   border: 1px solid var(--background-modifier-border);
   background: transparent;
   color: var(--text-muted);
+}
+.gallery-confirm-btn-cancel:hover {
+  background: var(--background-modifier-hover);
+  filter: none;
 }
 .gallery-confirm-btn-ok {
   border: none;
@@ -298,6 +335,11 @@
 .gallery-confirm-btn-ok.mod-warning {
   background: var(--text-error);
   color: #fff;
+}
+.gallery-confirm-btn-ok.mod-warning:hover {
+  background: var(--text-error);
+  color: #fff;
+  filter: brightness(0.85);
 }
 
 /* ── Edit Time Modal ── */
@@ -365,6 +407,7 @@
   border-radius: 50%;
   border: none;
   cursor: pointer;
+  box-shadow: none !important;
   transition: transform 0.15s ease;
   padding: 0;
   position: relative;
@@ -397,6 +440,7 @@
   color: var(--text-muted);
   font-size: 0.88em;
   cursor: pointer;
+  box-shadow: none !important;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .gallery-color-none:hover {
