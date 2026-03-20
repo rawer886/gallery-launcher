@@ -13,6 +13,7 @@ const FM_KEY_COLOR = 'gallery-color';
 const CSS_VAR_MIN_WIDTH = '--gallery-card-min-width';
 const CSS_VAR_MIN_HEIGHT = '--gallery-card-min-height';
 const DEBOUNCE_MS = 500;
+const SUMMARY_MAX_LENGTH = 150;
 const STAR_SVG_PATH = '12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2';
 
 function starSvg(size, strokeWidth = 2) {
@@ -33,10 +34,9 @@ const DEFAULT_SETTINGS = {
   excludeDirs: 'assets',
   defaultFolder: '',
   lastSelectedFolder: '',
-  summaryLength: 150,
   collapsedGroups: [],
   cardMinWidth: 200,
-  cardMinHeight: 160,
+  cardMinHeight: 240,
   showTags: true,
   showFolder: true,
   showDate: true,
@@ -86,10 +86,8 @@ const TRANSLATIONS = {
     settingExcludeDirs: 'Excluded folders',
     settingExcludeDirsDesc: 'Extra folders to exclude (comma-separated). Hidden folders starting with . are excluded automatically',
     settingDefaultFolder: 'Default folder',
-    settingDefaultFolderDesc: 'Folder selected by default when opening the gallery. Leave empty to show all',
-    settingDefaultFolderPlaceholder: 'e.g. Work',
-    settingSummaryLength: 'Summary max length',
-    settingSummaryLengthDesc: 'Maximum characters for the card content summary',
+    settingDefaultFolderDesc: 'Folder selected by default when opening the gallery. Leave empty to restore last viewed folder',
+    settingDefaultFolderPlaceholder: 'Leave empty to restore last folder',
     settingCardMinWidth: 'Card min width (px)',
     settingCardMinWidthDesc: 'Minimum width of each card in the grid layout',
     settingCardMinHeight: 'Card min height (px)',
@@ -157,10 +155,8 @@ const TRANSLATIONS = {
     settingExcludeDirs: '排除的目录',
     settingExcludeDirsDesc: '额外排除的目录（逗号分隔）。以 . 开头的隐藏目录已自动排除',
     settingDefaultFolder: '默认选中的目录',
-    settingDefaultFolderDesc: '打开画廊时默认选中的目录名称，留空则显示全部目录',
-    settingDefaultFolderPlaceholder: '例如: 工作记录',
-    settingSummaryLength: '摘要最大字数',
-    settingSummaryLengthDesc: '卡片中显示的内容摘要最大字符数',
+    settingDefaultFolderDesc: '打开画廊时默认选中的目录名称，留空则恢复上次浏览的目录',
+    settingDefaultFolderPlaceholder: '恢复上次浏览的目录',
     settingCardMinWidth: '卡片最小宽度 (px)',
     settingCardMinWidthDesc: '网格布局中每张卡片的最小宽度',
     settingCardMinHeight: '卡片最小高度 (px)',
@@ -189,7 +185,7 @@ const TRANSLATIONS = {
     newFolder: '新建目录',
     newFolderTitle: '新建目录',
     newFolderPlaceholder: '目录名称',
-    favorite: '收藏',
+    favorite: '收藏笔记',
     unfavorite: '取消收藏',
     favoritesSection: '收藏夹',
   },
@@ -623,7 +619,7 @@ class GalleryView extends ItemView {
     let folders = collectFolders();
 
     // Folder tabs — horizontal tag buttons (first row)
-    const initialFolder = settings.lastSelectedFolder || settings.defaultFolder || '';
+    const initialFolder = settings.defaultFolder || settings.lastSelectedFolder || '';
     let currentFolder = (initialFolder && folders.includes(initialFolder)) ? initialFolder : FOLDER_ALL;
     const folderBar = container.createEl('div', { cls: 'gallery-folder-bar' });
 
@@ -926,8 +922,8 @@ class GalleryView extends ItemView {
         let summary = '';
         try {
           const content = await this.app.vault.cachedRead(file);
-          summary = stripMarkdown(content, settings.summaryLength);
-          if (summary.length >= settings.summaryLength) {
+          summary = stripMarkdown(content, SUMMARY_MAX_LENGTH);
+          if (summary.length >= SUMMARY_MAX_LENGTH) {
             summary += '...';
           }
         } catch (e) { /* ignore */ }
@@ -1088,21 +1084,23 @@ class GalleryView extends ItemView {
 
         body.createEl('div', { text: summary || t('noContent'), cls: 'card-content' });
 
-        const footer = card.createEl('div', { cls: 'card-footer' });
-        if (settings.showFolder) {
-          const folderEl = footer.createEl('div', { cls: 'card-folder' });
-          const folderSpan = folderEl.createEl('span', { text: getParentPath(file) });
-          requestAnimationFrame(() => {
-            const overflow = folderSpan.scrollWidth - folderEl.clientWidth;
-            if (overflow > 0) {
-              folderEl.style.setProperty('--folder-overflow', overflow);
-            } else {
-              folderEl.classList.add('no-overflow');
-            }
-          });
-        }
-        if (settings.showDate) {
-          footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
+        if (settings.showFolder || settings.showDate) {
+          const footer = card.createEl('div', { cls: 'card-footer' });
+          if (settings.showFolder) {
+            const folderEl = footer.createEl('div', { cls: 'card-folder' });
+            const folderSpan = folderEl.createEl('span', { text: getParentPath(file) });
+            requestAnimationFrame(() => {
+              const overflow = folderSpan.scrollWidth - folderEl.clientWidth;
+              if (overflow > 0) {
+                folderEl.style.setProperty('--folder-overflow', overflow);
+              } else {
+                folderEl.classList.add('no-overflow');
+              }
+            });
+          }
+          if (settings.showDate) {
+            footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
+          }
         }
       };
 
@@ -1275,9 +1273,8 @@ class GallerySettingTab extends PluginSettingTab {
 
     this._addTextSetting(containerEl, 'settingExcludeDirs', 'settingExcludeDirsDesc', 'assets, templates', 'excludeDirs');
     this._addTextSetting(containerEl, 'settingDefaultFolder', 'settingDefaultFolderDesc', t('settingDefaultFolderPlaceholder'), 'defaultFolder');
-    this._addNumericSetting(containerEl, 'settingSummaryLength', 'settingSummaryLengthDesc', '150', 'summaryLength');
     this._addNumericSetting(containerEl, 'settingCardMinWidth', 'settingCardMinWidthDesc', '200', 'cardMinWidth');
-    this._addNumericSetting(containerEl, 'settingCardMinHeight', 'settingCardMinHeightDesc', '160', 'cardMinHeight');
+    this._addNumericSetting(containerEl, 'settingCardMinHeight', 'settingCardMinHeightDesc', '240', 'cardMinHeight');
     this._addToggleSetting(containerEl, 'settingShowTags', 'settingShowTagsDesc', 'showTags');
     this._addToggleSetting(containerEl, 'settingShowFolder', 'settingShowFolderDesc', 'showFolder');
     this._addToggleSetting(containerEl, 'settingShowDate', 'settingShowDateDesc', 'showDate');

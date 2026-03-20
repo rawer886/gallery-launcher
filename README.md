@@ -67,10 +67,9 @@ There are three ways to open the gallery view:
 | Setting | Description | Default |
 |---|---|---|
 | Excluded folders | Comma-separated folder names to hide (hidden `.` folders are always excluded) | `assets` |
-| Default folder | Folder selected on open; leave empty for all | — |
-| Summary max length | Max characters for the card content preview | `150` |
+| Default folder | Folder selected on open; leave empty to restore last viewed folder | — |
 | Card min width (px) | Minimum card width in the grid | `200` |
-| Card min height (px) | Minimum card height | `160` |
+| Card min height (px) | Minimum card height | `240` |
 | Show tags | Display note tags on cards | `true` |
 | Show folder path | Display folder path at card bottom | `true` |
 | Show date | Display creation date at card bottom | `true` |
