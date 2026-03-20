@@ -79,6 +79,7 @@ const TRANSLATIONS = {
     settingShowFolderDesc: 'Display the folder path at the bottom of cards',
     settingShowDate: 'Show date',
     settingShowDateDesc: 'Display the creation date at the bottom of cards',
+    revealInExplorer: 'Show in explorer',
     editTime: 'Edit time',
     editTimeTitle: 'Edit note time',
     createdTime: 'Created',
@@ -132,6 +133,7 @@ const TRANSLATIONS = {
     settingShowFolderDesc: '在卡片底部显示笔记所在的目录路径',
     settingShowDate: '显示日期',
     settingShowDateDesc: '在卡片底部显示笔记的创建日期',
+    revealInExplorer: '在文件管理器中显示',
     editTime: '修改时间',
     editTimeTitle: '修改笔记时间',
     createdTime: '创建时间',
@@ -663,6 +665,16 @@ class GalleryView extends ItemView {
                     new EditTimeModal(this.app, file, async () => {
                       await renderCards(currentFolder);
                     }).open();
+                  });
+              });
+              // -- 在系统资源管理器中显示 --
+              menu.addItem((item) => {
+                item.setTitle(t('revealInExplorer'))
+                  .setIcon('folder-open')
+                  .onClick(() => {
+                    const fullPath = this.app.vault.adapter.getFullPath(file.path);
+                    const { shell } = require('electron');
+                    shell.showItemInFolder(fullPath);
                   });
               });
               menu.addSeparator();
