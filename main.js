@@ -110,7 +110,6 @@ const TRANSLATIONS = {
     newFolder: 'New folder',
     newFolderTitle: 'New folder',
     newFolderPlaceholder: 'Folder name',
-    newFolderConfirmDir: 'A new folder will be created in <strong>{dir}</strong>.',
   },
   zh: {
     allFolders: '全部目录',
@@ -179,7 +178,6 @@ const TRANSLATIONS = {
     newFolder: '新建目录',
     newFolderTitle: '新建目录',
     newFolderPlaceholder: '目录名称',
-    newFolderConfirmDir: '将在 <strong>{dir}</strong> 下创建新目录。',
   },
 };
 
@@ -196,7 +194,7 @@ const _locale = (() => {
 function t(key, params) {
   const str = (TRANSLATIONS[_locale] && TRANSLATIONS[_locale][key]) || TRANSLATIONS.en[key] || key;
   if (!params) return str;
-  return str.replace(/\{(\w+)\}/g, (_, k) => (params[k] !== undefined ? params[k] : `{${k}}`));
+  return str.replace(/\{(\w+)\}/g, (_, k) => (params[k] !== undefined ? escapeHtml(String(params[k])) : `{${k}}`));
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +225,14 @@ function stripMarkdown(content, maxLen) {
 
 function getParentPath(file) {
   return file.parent ? file.parent.path : '/';
+}
+
+function pathPrefix(dir) {
+  return dir === '/' ? '' : dir + '/';
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function getChildFolderNames(vault, dirPath) {
@@ -343,7 +349,6 @@ class InputModal extends Modal {
     // Suggestions dropdown
     const suggestions = opts.suggestions || [];
     let suggestEl = null;
-    let activeSuggestIdx = -1;
 
     if (suggestions.length > 0) {
       suggestEl = contentEl.createEl('div', { cls: 'gallery-suggest-list' });
@@ -351,7 +356,6 @@ class InputModal extends Modal {
 
       const renderSuggestions = (filter) => {
         suggestEl.empty();
-        activeSuggestIdx = -1;
         const query = filter.toLowerCase();
         const matched = query
           ? suggestions.filter(s => s.toLowerCase().includes(query))
@@ -774,6 +778,21 @@ class GalleryView extends ItemView {
       menu.showAtMouseEvent(e);
     });
 
+    // Helper: open "new folder" modal for a given directory
+    const openNewFolderModal = (dir) => {
+      const prefix = pathPrefix(dir);
+      new InputModal(this.app, {
+        title: t('newFolderTitle'),
+        basePath: prefix,
+        placeholder: t('newFolderPlaceholder'),
+        suggestions: getChildFolderNames(this.app.vault, dir),
+        onConfirm: async (name) => {
+          await this.app.vault.createFolder(prefix + name);
+          await renderCards(currentFolder);
+        },
+      }).open();
+    };
+
     // Card area
     const cardArea = container.createEl('div');
 
@@ -792,21 +811,7 @@ class GalleryView extends ItemView {
       menu.addItem((item) => {
         item.setTitle(t('newFolder'))
           .setIcon('folder-plus')
-          .onClick(() => {
-            const dir = currentFolder === FOLDER_ALL ? '/' : currentFolder;
-            const prefix = dir === '/' ? '' : dir + '/';
-            new InputModal(this.app, {
-              title: t('newFolderTitle'),
-              basePath: prefix,
-              placeholder: t('newFolderPlaceholder'),
-              suggestions: getChildFolderNames(this.app.vault, dir),
-              onConfirm: async (name) => {
-                const folderPath = prefix + name;
-                await this.app.vault.createFolder(folderPath);
-                await renderCards(currentFolder);
-              },
-            }).open();
-          });
+          .onClick(() => openNewFolderModal(currentFolder === FOLDER_ALL ? '/' : currentFolder));
       });
       menu.addSeparator();
       menu.addItem((item) => {
@@ -841,7 +846,11 @@ class GalleryView extends ItemView {
     // renderCards — with batched rendering & empty state
     // ------------------------------------------------------------------
     const renderCards = async (folder) => {
-      renderFolderTabs();
+      // Only rebuild folder tabs if the folder list changed
+      const freshFolders = collectFolders();
+      if (freshFolders.length !== folders.length || freshFolders.some((f, i) => f !== folders[i])) {
+        renderFolderTabs();
+      }
       cardArea.empty();
 
       // Collect files
@@ -1001,20 +1010,7 @@ class GalleryView extends ItemView {
               menu.addItem((item) => {
                 item.setTitle(t('newFolder'))
                   .setIcon('folder-plus')
-                  .onClick(() => {
-                    const prefix = cardDir === '/' ? '' : cardDir + '/';
-                    new InputModal(this.app, {
-                      title: t('newFolderTitle'),
-                      basePath: prefix,
-                      placeholder: t('newFolderPlaceholder'),
-                      suggestions: getChildFolderNames(this.app.vault, cardDir),
-                      onConfirm: async (name) => {
-                        const folderPath = prefix + name;
-                        await this.app.vault.createFolder(folderPath);
-                        await renderCards(currentFolder);
-                      },
-                    }).open();
-                  });
+                  .onClick(() => openNewFolderModal(cardDir));
               });
               menu.addSeparator();
               // -- 设置颜色 --
@@ -1163,7 +1159,7 @@ class GalleryView extends ItemView {
   async createNewNote(folderPath) {
     const vault = this.app.vault;
     const base = t('untitledNote');
-    const buildPath = (name) => folderPath === '/' ? name : `${folderPath}/${name}`;
+    const buildPath = (name) => pathPrefix(folderPath) + name;
     let fileName = `${base}.md`;
     let filePath = buildPath(fileName);
     let counter = 1;
