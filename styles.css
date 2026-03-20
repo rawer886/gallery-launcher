@@ -335,3 +335,75 @@
   justify-content: flex-end;
   margin-top: 4px;
 }
+
+/* ── Colored card border ── */
+.gallery-card-colored {
+  border-width: 2px;
+}
+.gallery-card-colored:hover {
+  border-color: inherit;
+}
+
+/* ── Color Picker Modal ── */
+.gallery-color-picker {
+  padding: 8px 4px;
+}
+.gallery-color-picker h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+.gallery-color-grid {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  justify-content: center;
+}
+.gallery-color-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  padding: 0;
+  position: relative;
+}
+.gallery-color-dot:hover {
+  transform: scale(1.15);
+}
+.gallery-color-dot.is-active {
+  transform: scale(1.15);
+}
+.gallery-color-dot.is-active::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.gallery-color-none {
+  display: block;
+  width: 100%;
+  padding: 8px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.gallery-color-none:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.gallery-color-none.is-active {
+  border-color: var(--text-normal);
+  color: var(--text-normal);
+}

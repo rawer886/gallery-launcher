@@ -11,6 +11,16 @@ const CSS_VAR_MIN_WIDTH = '--gallery-card-min-width';
 const CSS_VAR_MIN_HEIGHT = '--gallery-card-min-height';
 const DEBOUNCE_MS = 500;
 
+const CARD_COLORS = [
+  { name: 'red',    value: '#fc3d39' },
+  { name: 'orange', value: '#ff9500' },
+  { name: 'yellow', value: '#ffcc00' },
+  { name: 'green',  value: '#34c759' },
+  { name: 'blue',   value: '#007aff' },
+  { name: 'purple', value: '#af52de' },
+  { name: 'gray',   value: '#8e8e93' },
+];
+
 const DEFAULT_SETTINGS = {
   excludeDirs: 'assets',
   defaultFolder: '',
@@ -85,6 +95,15 @@ const TRANSLATIONS = {
     createdTime: 'Created',
     modifiedTime: 'Modified',
     save: 'Save',
+    cardColor: 'Set color',
+    removeColor: 'Remove color',
+    colorRed: 'Red',
+    colorOrange: 'Orange',
+    colorYellow: 'Yellow',
+    colorGreen: 'Green',
+    colorBlue: 'Blue',
+    colorPurple: 'Purple',
+    colorGray: 'Gray',
   },
   zh: {
     allFolders: '全部目录',
@@ -139,6 +158,15 @@ const TRANSLATIONS = {
     createdTime: '创建时间',
     modifiedTime: '更新时间',
     save: '保存',
+    cardColor: '设置颜色',
+    removeColor: '移除颜色',
+    colorRed: '红色',
+    colorOrange: '橙色',
+    colorYellow: '黄色',
+    colorGreen: '绿色',
+    colorBlue: '蓝色',
+    colorPurple: '紫色',
+    colorGray: '灰色',
   },
 };
 
@@ -319,6 +347,70 @@ class EditTimeModal extends Modal {
         console.error('EditTimeModal: failed to update time', e);
         new Notice('Error: ' + e.message);
       }
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ColorPickerModal
+// ---------------------------------------------------------------------------
+class ColorPickerModal extends Modal {
+  constructor(app, file, onSave) {
+    super(app);
+    this.file = file;
+    this.onSave = onSave;
+  }
+
+  onOpen() {
+    const { contentEl, file } = this;
+    contentEl.empty();
+    contentEl.addClass('gallery-color-picker');
+
+    contentEl.createEl('h3', { text: t('cardColor') });
+
+    // Read current color from frontmatter
+    const cache = this.app.metadataCache.getFileCache(file);
+    const currentColor = cache?.frontmatter?.['gallery-color'] || '';
+
+    // Color dots grid
+    const grid = contentEl.createEl('div', { cls: 'gallery-color-grid' });
+    for (const color of CARD_COLORS) {
+      const dot = grid.createEl('button', {
+        cls: 'gallery-color-dot',
+        attr: { 'aria-label': t(`color${color.name.charAt(0).toUpperCase() + color.name.slice(1)}`) },
+      });
+      dot.style.backgroundColor = color.value;
+      if (currentColor === color.name) dot.addClass('is-active');
+      dot.addEventListener('click', async () => {
+        await this.app.fileManager.processFrontMatter(file, (fm) => {
+          fm['gallery-color'] = color.name;
+        });
+        this.close();
+        // Wait for metadataCache to update before refreshing
+        setTimeout(async () => {
+          if (this.onSave) await this.onSave();
+        }, 200);
+      });
+    }
+
+    // "No color" button
+    const noneBtn = contentEl.createEl('button', {
+      text: t('removeColor'),
+      cls: 'gallery-color-none',
+    });
+    if (!currentColor) noneBtn.addClass('is-active');
+    noneBtn.addEventListener('click', async () => {
+      await this.app.fileManager.processFrontMatter(file, (fm) => {
+        delete fm['gallery-color'];
+      });
+      this.close();
+      setTimeout(async () => {
+        if (this.onSave) await this.onSave();
+      }, 200);
     });
   }
 
@@ -632,6 +724,15 @@ class GalleryView extends ItemView {
             } catch (e) { /* ignore */ }
 
             const card = grid.createEl('div', { cls: 'gallery-card' });
+            const cardCache = this.app.metadataCache.getFileCache(file);
+            const cardColor = cardCache?.frontmatter?.['gallery-color'];
+            if (cardColor) {
+              const colorDef = CARD_COLORS.find(c => c.name === cardColor);
+              if (colorDef) {
+                card.style.borderColor = colorDef.value;
+                card.classList.add('gallery-card-colored');
+              }
+            }
             card.addEventListener('click', () => {
               this.app.workspace.openLinkText(file.path, '');
             });
@@ -657,7 +758,17 @@ class GalleryView extends ItemView {
                   });
               });
               menu.addSeparator();
-              // -- 编辑 --
+              // -- 设置颜色 --
+              menu.addItem((item) => {
+                item.setTitle(t('cardColor'))
+                  .setIcon('palette')
+                  .onClick(() => {
+                    new ColorPickerModal(this.app, file, async () => {
+                      await renderCards(currentFolder);
+                    }).open();
+                  });
+              });
+              // -- 编辑时间 --
               menu.addItem((item) => {
                 item.setTitle(t('editTime'))
                   .setIcon('clock')
@@ -667,6 +778,7 @@ class GalleryView extends ItemView {
                     }).open();
                   });
               });
+              menu.addSeparator();
               // -- 在系统资源管理器中显示 --
               menu.addItem((item) => {
                 item.setTitle(t('revealInExplorer'))
