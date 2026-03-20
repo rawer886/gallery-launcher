@@ -5,10 +5,13 @@ An [Obsidian](https://obsidian.md) plugin that lets you browse your vault notes 
 ## Features
 
 - **Gallery view** — browse notes as responsive card grid with title, tags, content summary, folder path, and date
-- **Folder filtering** — select a specific folder or view all folders at once
+- **Folder filtering** — select a specific folder or view all; drag to reorder, right-click to pin/unpin
+- **Favorites** — right-click a card to favorite/unfavorite; favorited notes show a star badge and appear in a dedicated collapsible section at the top
+- **Card colors** — set a colored border on any card via right-click context menu (stored in frontmatter)
 - **Sorting** — sort by created time, modified time, or title (ascending / descending)
-- **Month grouping** — optionally group notes by month
-- **Quick note creation** — right-click to create a new note in any folder
+- **Group collapse** — collapse/expand individual groups or all groups at once; state persists across sessions
+- **Context menu** — right-click cards to create notes/folders, set color, edit timestamps, favorite, reveal in explorer, or delete
+- **Edit timestamps** — modify creation and modification times of notes directly from the gallery
 - **Batch rendering** — loads notes in batches of 100 for smooth performance on large vaults
 - **i18n** — UI automatically switches between English and Chinese based on Obsidian locale
 - **Command palette** — open the gallery from the command palette ("Gallery Launcher: Open Gallery")
@@ -43,19 +46,21 @@ There are three ways to open the gallery view:
 - The gallery displays all your Markdown (`.md`) and Canvas (`.canvas`) files as cards
 - Each card shows the **title**, **content summary**, **tags**, **folder path**, and **creation date**
 - Click any card to open that note
-- Use the **folder dropdown** at the top to filter by a specific folder or view all
+- Use the **folder tabs** at the top to filter by a specific folder or view all
+- **Drag** folder tabs to reorder; **right-click** to pin/unpin a folder to the top
 
 ### Sorting & Grouping
 
-- Click the **sort button** (↕) next to the folder dropdown to access sorting options:
+- Click the **sort button** in the info bar to access sorting options:
   - Sort by **created time**, **modified time**, or **title**
   - Toggle between ascending and descending order
-  - Enable/disable **month grouping** to organize notes by month
+  - Enable/disable **grouping** to organize notes by month (time sort) or folder (title sort)
+- Use the **expand/collapse** buttons to toggle all groups at once
 
-### Creating New Notes
+### Context Menu
 
-- **Right-click** on any empty area in the gallery to create a new note in the current folder
-- **Right-click** on a specific card to create a new note in that card's folder
+- **Right-click** on any empty area to create a new note/folder or refresh the gallery
+- **Right-click** on a card for actions: favorite, create note/folder, set color, edit timestamps, reveal in explorer, or delete
 
 ### Large Vaults
 
