@@ -1,4 +1,4 @@
-const { Plugin, ItemView, Notice, PluginSettingTab, Setting, Menu } = require('obsidian');
+const { Plugin, ItemView, Notice, PluginSettingTab, Setting, Menu, Modal } = require('obsidian');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -14,6 +14,7 @@ const DEBOUNCE_MS = 500;
 const DEFAULT_SETTINGS = {
   excludeDirs: 'assets',
   defaultFolder: '',
+  lastSelectedFolder: '',
   summaryLength: 150,
   cardMinWidth: 200,
   cardMinHeight: 160,
@@ -23,6 +24,8 @@ const DEFAULT_SETTINGS = {
   sortBy: 'mtime',
   sortOrder: 'desc',
   groupByMonth: true,
+  pinnedFolders: [],
+  folderOrder: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -40,14 +43,23 @@ const TRANSLATIONS = {
     sortTitleDesc: 'Title: Z to A',
     groupByMonth: 'Group notes by month',
     newNote: 'New note',
-    newNoteInDir: 'New note in this folder',
+    newNoteTitle: 'New note',
+    newNoteConfirmDir: 'A new note will be created in <strong>{dir}</strong>.',
     deleteNote: 'Delete note',
-    deleteNoteConfirm: 'Are you sure you want to delete "{name}"?',
+    deleteNoteTitle: 'Delete note',
+    deleteNoteConfirm: 'Are you sure you want to delete <strong>{name}</strong>? This action cannot be undone.',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    delete: 'Delete',
+    pinFolder: 'Pin to top',
+    unpinFolder: 'Unpin',
     untitledNote: 'Untitled',
     noContent: 'No content',
     emptyGallery: 'No notes found',
     loadMore: 'Load more ({remaining} remaining)',
-    noteCount: '{count} notes',
+    noteCount: 'Total {count} notes',
+    groupNoteCount: '{count} notes',
+    refresh: 'Refresh',
     openGallery: 'Open Gallery',
     settingsTitle: 'Gallery Launcher Settings',
     settingExcludeDirs: 'Excluded folders',
@@ -67,6 +79,11 @@ const TRANSLATIONS = {
     settingShowFolderDesc: 'Display the folder path at the bottom of cards',
     settingShowDate: 'Show date',
     settingShowDateDesc: 'Display the creation date at the bottom of cards',
+    editTime: 'Edit time',
+    editTimeTitle: 'Edit note time',
+    createdTime: 'Created',
+    modifiedTime: 'Modified',
+    save: 'Save',
   },
   zh: {
     allFolders: '全部目录',
@@ -79,14 +96,23 @@ const TRANSLATIONS = {
     sortTitleDesc: '按标题：Z 到 A',
     groupByMonth: '按组显示笔记',
     newNote: '新建笔记',
-    newNoteInDir: '在此目录新建笔记',
+    newNoteTitle: '新建笔记',
+    newNoteConfirmDir: '将在 <strong>{dir}</strong> 目录下新建笔记。',
     deleteNote: '删除笔记',
-    deleteNoteConfirm: '确定要删除「{name}」吗？',
+    deleteNoteTitle: '删除笔记',
+    deleteNoteConfirm: '确定要删除 <strong>{name}</strong> 吗？此操作无法撤销。',
+    cancel: '取消',
+    confirm: '确认',
+    delete: '删除',
+    pinFolder: '置顶',
+    unpinFolder: '取消置顶',
     untitledNote: '未命名笔记',
     noContent: '暂无内容',
     emptyGallery: '暂无笔记',
     loadMore: '加载更多（剩余 {remaining} 篇）',
-    noteCount: '{count} 篇',
+    noteCount: '总笔记篇数 {count} 篇',
+    groupNoteCount: '{count} 篇',
+    refresh: '刷新',
     openGallery: '打开画廊',
     settingsTitle: 'Gallery Launcher 设置',
     settingExcludeDirs: '排除的目录',
@@ -106,6 +132,11 @@ const TRANSLATIONS = {
     settingShowFolderDesc: '在卡片底部显示笔记所在的目录路径',
     settingShowDate: '显示日期',
     settingShowDateDesc: '在卡片底部显示笔记的创建日期',
+    editTime: '修改时间',
+    editTimeTitle: '修改笔记时间',
+    createdTime: '创建时间',
+    modifiedTime: '更新时间',
+    save: '保存',
   },
 };
 
@@ -164,6 +195,137 @@ function debounce(fn, ms) {
 }
 
 // ---------------------------------------------------------------------------
+// ConfirmModal
+// ---------------------------------------------------------------------------
+class ConfirmModal extends Modal {
+  /**
+   * @param {App} app
+   * @param {object} opts
+   * @param {string} opts.title - Modal title
+   * @param {string} opts.message - Body text
+   * @param {string} [opts.confirmText] - Confirm button label
+   * @param {string} [opts.cancelText] - Cancel button label
+   * @param {'default'|'danger'} [opts.confirmStyle] - Confirm button style
+   * @param {() => void|Promise<void>} opts.onConfirm - Callback on confirm
+   */
+  constructor(app, opts) {
+    super(app);
+    this.opts = opts;
+  }
+
+  onOpen() {
+    const { contentEl, opts } = this;
+    contentEl.empty();
+    contentEl.addClass('gallery-confirm-modal');
+
+    contentEl.createEl('h3', { text: opts.title });
+    const msgEl = contentEl.createEl('p');
+    msgEl.innerHTML = opts.message;
+
+    const btnRow = contentEl.createEl('div', { cls: 'gallery-confirm-actions' });
+
+    const cancelBtn = btnRow.createEl('button', {
+      text: opts.cancelText || t('cancel'),
+      cls: 'gallery-confirm-btn gallery-confirm-btn-cancel',
+    });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const confirmBtn = btnRow.createEl('button', {
+      text: opts.confirmText || t('confirm'),
+      cls: `gallery-confirm-btn gallery-confirm-btn-ok${opts.confirmStyle === 'danger' ? ' mod-warning' : ''}`,
+    });
+    confirmBtn.addEventListener('click', async () => {
+      this.close();
+      if (opts.onConfirm) await opts.onConfirm();
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// EditTimeModal
+// ---------------------------------------------------------------------------
+function toLocalDatetime(ts) {
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+class EditTimeModal extends Modal {
+  constructor(app, file, onSave) {
+    super(app);
+    this.file = file;
+    this.onSave = onSave;
+  }
+
+  onOpen() {
+    const { contentEl, file } = this;
+    contentEl.empty();
+    contentEl.addClass('gallery-edit-time-modal');
+
+    contentEl.createEl('h3', { text: t('editTimeTitle') });
+
+    const form = contentEl.createEl('div', { cls: 'gallery-edit-time-form' });
+
+    // Created time
+    const ctimeRow = form.createEl('div', { cls: 'gallery-edit-time-row' });
+    ctimeRow.createEl('label', { text: t('createdTime') });
+    const ctimeInput = ctimeRow.createEl('input', { type: 'datetime-local' });
+    ctimeInput.value = toLocalDatetime(file.stat.ctime);
+
+    // Modified time
+    const mtimeRow = form.createEl('div', { cls: 'gallery-edit-time-row' });
+    mtimeRow.createEl('label', { text: t('modifiedTime') });
+    const mtimeInput = mtimeRow.createEl('input', { type: 'datetime-local' });
+    mtimeInput.value = toLocalDatetime(file.stat.mtime);
+
+    // Save button
+    const btnRow = form.createEl('div', { cls: 'gallery-edit-time-actions' });
+    const saveBtn = btnRow.createEl('button', { text: t('save'), cls: 'mod-cta' });
+    saveBtn.addEventListener('click', async () => {
+      try {
+        const fs = require('fs');
+        const { execSync } = require('child_process');
+        const fullPath = this.app.vault.adapter.getFullPath(file.path);
+
+        const newCtime = new Date(ctimeInput.value);
+        const newMtime = new Date(mtimeInput.value);
+
+        // Set atime & mtime via Node.js fs
+        fs.utimesSync(fullPath, newMtime, newMtime);
+
+        // On macOS, set birthtime (creation time) via SetFile or touch
+        if (process.platform === 'darwin') {
+          const pad = (n) => String(n).padStart(2, '0');
+          // touch -t format: [[CC]YY]MMDDhhmm[.SS]
+          const touchDate = `${newCtime.getFullYear()}${pad(newCtime.getMonth() + 1)}${pad(newCtime.getDate())}${pad(newCtime.getHours())}${pad(newCtime.getMinutes())}.${pad(newCtime.getSeconds())}`;
+          execSync(`touch -t ${touchDate} "${fullPath}"`);
+          // Restore mtime after touch changed it
+          fs.utimesSync(fullPath, newMtime, newMtime);
+        }
+
+        // Refresh Obsidian's internal file cache
+        this.app.vault.adapter.reconcileFile(file.path, file.path);
+
+        this.close();
+        if (this.onSave) await this.onSave();
+        new Notice(t('editTime') + ' ✓');
+      } catch (e) {
+        console.error('EditTimeModal: failed to update time', e);
+        new Notice('Error: ' + e.message);
+      }
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GalleryView
 // ---------------------------------------------------------------------------
 class GalleryView extends ItemView {
@@ -193,18 +355,132 @@ class GalleryView extends ItemView {
       .map(f => f.name)
       .sort();
 
-    // Toolbar
-    const toolbar = container.createEl('div', { cls: 'gallery-toolbar' });
-    const select = toolbar.createEl('select', { cls: 'gallery-select' });
+    // Folder tabs — horizontal tag buttons (first row)
+    const initialFolder = settings.lastSelectedFolder || settings.defaultFolder || '';
+    let currentFolder = (initialFolder && folders.includes(initialFolder)) ? initialFolder : FOLDER_ALL;
+    const folderBar = container.createEl('div', { cls: 'gallery-folder-bar' });
 
-    select.createEl('option', { text: t('allFolders'), attr: { value: FOLDER_ALL } });
-    for (const folderName of folders) {
-      const opt = select.createEl('option', { text: folderName, attr: { value: folderName } });
-      if (settings.defaultFolder && folderName === settings.defaultFolder) opt.selected = true;
-    }
+    const tabEls = [];
 
-    // Sort button
-    const sortBtn = toolbar.createEl('button', { cls: 'gallery-sort-btn', attr: { 'aria-label': t('sort') } });
+    const setActiveTab = (value) => {
+      currentFolder = value;
+      for (const tab of tabEls) {
+        tab.toggleClass('is-active', tab.dataset.folder === value);
+      }
+    };
+
+    // Sort folders: use saved order, pinned first, new folders appended alphabetically
+    const getSortedFolders = () => {
+      const order = settings.folderOrder || [];
+      const pinned = settings.pinnedFolders || [];
+      // Folders in saved order (filter out deleted ones)
+      const ordered = order.filter(f => folders.includes(f));
+      // New folders not yet in order
+      const newFolders = folders.filter(f => !order.includes(f)).sort((a, b) => a.localeCompare(b, 'zh'));
+      const all = [...ordered, ...newFolders];
+      // Pinned first, rest keep their order
+      const pinnedItems = all.filter(f => pinned.includes(f));
+      const unpinnedItems = all.filter(f => !pinned.includes(f));
+      return [...pinnedItems, ...unpinnedItems];
+    };
+
+    let draggedFolder = null;
+
+    const renderFolderTabs = () => {
+      folderBar.empty();
+      tabEls.length = 0;
+      const currentPinned = settings.pinnedFolders || [];
+      const sorted = getSortedFolders();
+      const items = [{ value: FOLDER_ALL, label: t('allFolders') }, ...sorted.map(f => ({ value: f, label: f }))];
+
+      for (const { value, label } of items) {
+        const isPinned = value !== FOLDER_ALL && currentPinned.includes(value);
+        const tab = folderBar.createEl('button', { cls: 'gallery-folder-tab' });
+        if (isPinned) {
+          const pinEl = tab.createEl('span', { cls: 'pin-icon' });
+          pinEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z"/></svg>';
+        }
+        tab.appendText(label);
+        tab.dataset.folder = value;
+        if (value === currentFolder) tab.addClass('is-active');
+        if (isPinned) tab.addClass('is-pinned');
+        tab.addEventListener('click', async () => {
+          setActiveTab(value);
+          settings.lastSelectedFolder = value === FOLDER_ALL ? '' : value;
+          await this.plugin.saveData(settings);
+          await renderCards(currentFolder);
+        });
+
+        // Drag & drop reorder (skip "All" tab)
+        if (value !== FOLDER_ALL) {
+          tab.setAttribute('draggable', 'true');
+          tab.addEventListener('dragstart', (e) => {
+            draggedFolder = value;
+            tab.addClass('is-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          tab.addEventListener('dragend', () => {
+            tab.removeClass('is-dragging');
+            draggedFolder = null;
+            folderBar.querySelectorAll('.drag-over').forEach(el => el.removeClass('drag-over'));
+          });
+          tab.addEventListener('dragover', (e) => {
+            if (!draggedFolder || draggedFolder === value) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            tab.addClass('drag-over');
+          });
+          tab.addEventListener('dragleave', () => {
+            tab.removeClass('drag-over');
+          });
+          tab.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            tab.removeClass('drag-over');
+            if (!draggedFolder || draggedFolder === value) return;
+            // Compute new order
+            const sorted = getSortedFolders();
+            const from = sorted.indexOf(draggedFolder);
+            const to = sorted.indexOf(value);
+            if (from === -1 || to === -1) return;
+            sorted.splice(from, 1);
+            sorted.splice(to, 0, draggedFolder);
+            settings.folderOrder = sorted;
+            await this.plugin.saveData(settings);
+            renderFolderTabs();
+          });
+
+          // Right-click context menu for pin/unpin
+          tab.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const menu = new Menu();
+            const folderPinned = (settings.pinnedFolders || []).includes(value);
+            menu.addItem((item) => {
+              item.setTitle(folderPinned ? t('unpinFolder') : t('pinFolder'))
+                .setIcon(folderPinned ? 'pin-off' : 'pin')
+                .onClick(async () => {
+                  if (folderPinned) {
+                    settings.pinnedFolders = (settings.pinnedFolders || []).filter(f => f !== value);
+                  } else {
+                    settings.pinnedFolders = [...(settings.pinnedFolders || []), value];
+                  }
+                  await this.plugin.saveData(settings);
+                  renderFolderTabs();
+                });
+            });
+            menu.showAtMouseEvent(e);
+          });
+        }
+        tabEls.push(tab);
+      }
+    };
+
+    renderFolderTabs();
+
+    // Info bar — note count (left) + sort button (right)
+    const infoBar = container.createEl('div', { cls: 'gallery-info-bar' });
+    const noteCountEl = infoBar.createEl('span', { cls: 'gallery-note-count' });
+    const sortBtn = infoBar.createEl('button', { cls: 'gallery-sort-btn', attr: { 'aria-label': t('sort') } });
     sortBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="m3 17 3 3 3-3"/><path d="M6 18V4"/></svg>';
 
     const SORT_OPTIONS = [
@@ -226,7 +502,7 @@ class GalleryView extends ItemView {
               settings.sortBy = opt.key;
               settings.sortOrder = opt.order;
               await this.plugin.saveSettings();
-              await renderCards(select.value);
+              await renderCards(currentFolder);
             });
         });
       }
@@ -237,7 +513,7 @@ class GalleryView extends ItemView {
           .onClick(async () => {
             settings.groupByMonth = !settings.groupByMonth;
             await this.plugin.saveSettings();
-            await renderCards(select.value);
+            await renderCards(currentFolder);
           });
       });
       menu.showAtMouseEvent(e);
@@ -246,16 +522,23 @@ class GalleryView extends ItemView {
     // Card area
     const cardArea = container.createEl('div');
 
-    cardArea.addEventListener('contextmenu', (e) => {
+    container.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const menu = new Menu();
       menu.addItem((item) => {
         item.setTitle(t('newNote'))
           .setIcon('plus')
           .onClick(async () => {
-            const dir = select.value === FOLDER_ALL ? '/' : select.value;
+            const dir = currentFolder === FOLDER_ALL ? '/' : currentFolder;
             await this.createNewNote(dir);
-            await renderCards(select.value);
+            await renderCards(currentFolder);
+          });
+      });
+      menu.addItem((item) => {
+        item.setTitle(t('refresh'))
+          .setIcon('refresh-cw')
+          .onClick(async () => {
+            await renderCards(currentFolder);
           });
       });
       menu.showAtMouseEvent(e);
@@ -282,6 +565,9 @@ class GalleryView extends ItemView {
           this.collectNoteFiles(folderObj, files);
         }
       }
+
+      // Update note count in info bar
+      noteCountEl.textContent = t('noteCount', { count: files.length });
 
       // Empty state
       if (files.length === 0) {
@@ -328,7 +614,7 @@ class GalleryView extends ItemView {
           if (groupByMonth) {
             const monthEl = cardArea.createEl('div', { cls: 'gallery-month' });
             monthEl.createSpan({ text: month });
-            monthEl.createSpan({ text: t('noteCount', { count: monthFiles.length }), cls: 'gallery-month-count' });
+            monthEl.createSpan({ text: t('groupNoteCount', { count: monthFiles.length }), cls: 'gallery-month-count' });
           }
 
           const grid = cardArea.createEl('div', { cls: 'gallery-container' });
@@ -351,22 +637,59 @@ class GalleryView extends ItemView {
               e.preventDefault();
               e.stopPropagation();
               const menu = new Menu();
+              // -- 创建 --
               menu.addItem((item) => {
-                item.setTitle(t('newNoteInDir'))
+                item.setTitle(t('newNote'))
                   .setIcon('plus')
-                  .onClick(async () => {
-                    await this.createNewNote(getParentPath(file));
-                    await renderCards(select.value);
+                  .onClick(() => {
+                    const dir = getParentPath(file);
+                    new ConfirmModal(this.app, {
+                      title: t('newNoteTitle'),
+                      message: t('newNoteConfirmDir', { dir }),
+                      confirmText: t('confirm'),
+                      onConfirm: async () => {
+                        await this.createNewNote(dir);
+                        await renderCards(currentFolder);
+                      },
+                    }).open();
                   });
               });
+              menu.addSeparator();
+              // -- 编辑 --
+              menu.addItem((item) => {
+                item.setTitle(t('editTime'))
+                  .setIcon('clock')
+                  .onClick(() => {
+                    new EditTimeModal(this.app, file, async () => {
+                      await renderCards(currentFolder);
+                    }).open();
+                  });
+              });
+              menu.addSeparator();
+              // -- 危险操作 --
               menu.addItem((item) => {
                 item.setTitle(t('deleteNote'))
                   .setIcon('trash')
+                  .onClick(() => {
+                    new ConfirmModal(this.app, {
+                      title: t('deleteNoteTitle'),
+                      message: t('deleteNoteConfirm', { name: file.basename }),
+                      confirmText: t('delete'),
+                      confirmStyle: 'danger',
+                      onConfirm: async () => {
+                        await this.app.vault.trash(file, true);
+                        await renderCards(currentFolder);
+                      },
+                    }).open();
+                  });
+              });
+              menu.addSeparator();
+              // -- 刷新 --
+              menu.addItem((item) => {
+                item.setTitle(t('refresh'))
+                  .setIcon('refresh-cw')
                   .onClick(async () => {
-                    if (confirm(t('deleteNoteConfirm', { name: file.basename }))) {
-                      await this.app.vault.trash(file, true);
-                      await renderCards(select.value);
-                    }
+                    await renderCards(currentFolder);
                   });
               });
               menu.showAtMouseEvent(e);
@@ -429,8 +752,17 @@ class GalleryView extends ItemView {
       await renderBatch(currentLimit);
     };
 
-    select.addEventListener('change', () => renderCards(select.value));
-    await renderCards(select.value);
+    // Auto-refresh when switching back to gallery tab
+    this._renderCards = renderCards;
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', (leaf) => {
+        if (leaf === this.leaf) {
+          renderCards(currentFolder);
+        }
+      })
+    );
+
+    await renderCards(currentFolder);
   }
 
   collectNoteFiles(folder, results = []) {
