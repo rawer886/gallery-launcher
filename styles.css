@@ -221,13 +221,28 @@
   border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 40%, transparent);
 }
 
-/* Folder path */
+/* Folder path — marquee on hover */
 .gallery-card .card-folder {
   font-size: 0.7em;
   color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  position: relative;
+}
+.gallery-card .card-folder span {
+  display: inline-block;
+  white-space: nowrap;
+}
+.gallery-card:hover .card-folder {
+  text-overflow: clip;
+}
+.gallery-card:hover .card-folder:not(.no-overflow) span {
+  animation: folder-scroll 1.5s linear 0.2s infinite alternate;
+}
+@keyframes folder-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(calc(var(--folder-overflow, 0) * -1px)); }
 }
 
 /* Date */
@@ -340,6 +355,82 @@
   background: var(--text-error);
   color: #fff;
   filter: brightness(0.85);
+}
+
+/* ── Input field (InputModal) ── */
+.gallery-input-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  transition: border-color 0.15s ease;
+  overflow: hidden;
+}
+.gallery-input-row:focus-within {
+  border-color: var(--interactive-accent);
+}
+.gallery-input-prefix {
+  padding: 8px 0 8px 12px;
+  font-size: 0.92em;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+}
+.gallery-input-row .gallery-input {
+  border: none;
+  border-radius: 0;
+  margin-bottom: 0;
+  background: transparent;
+  padding-left: 2px;
+}
+.gallery-input-row .gallery-input:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+.gallery-input {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.92em;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+.gallery-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+/* ── Suggestion list ── */
+.gallery-suggest-list {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+}
+.gallery-suggest-item {
+  padding: 6px 12px;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.gallery-suggest-item:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.gallery-suggest-item strong {
+  color: var(--text-normal);
+  font-weight: 600;
 }
 
 /* ── Edit Time Modal ── */

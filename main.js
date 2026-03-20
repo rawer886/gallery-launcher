@@ -107,6 +107,10 @@ const TRANSLATIONS = {
     colorBlue: 'Blue',
     colorPurple: 'Purple',
     colorGray: 'Gray',
+    newFolder: 'New folder',
+    newFolderTitle: 'New folder',
+    newFolderPlaceholder: 'Folder name',
+    newFolderConfirmDir: 'A new folder will be created in <strong>{dir}</strong>.',
   },
   zh: {
     allFolders: '全部目录',
@@ -172,6 +176,10 @@ const TRANSLATIONS = {
     colorBlue: '蓝色',
     colorPurple: '紫色',
     colorGray: '灰色',
+    newFolder: '新建目录',
+    newFolderTitle: '新建目录',
+    newFolderPlaceholder: '目录名称',
+    newFolderConfirmDir: '将在 <strong>{dir}</strong> 下创建新目录。',
   },
 };
 
@@ -219,6 +227,15 @@ function stripMarkdown(content, maxLen) {
 
 function getParentPath(file) {
   return file.parent ? file.parent.path : '/';
+}
+
+function getChildFolderNames(vault, dirPath) {
+  const folder = dirPath === '/' ? vault.getRoot() : vault.getAbstractFileByPath(dirPath);
+  if (!folder || !folder.children) return [];
+  return folder.children
+    .filter(f => f.children !== undefined)
+    .map(f => f.name)
+    .sort((a, b) => a.localeCompare(b, 'zh'));
 }
 
 function debounce(fn, ms) {
@@ -272,6 +289,131 @@ class ConfirmModal extends Modal {
     confirmBtn.addEventListener('click', async () => {
       this.close();
       if (opts.onConfirm) await opts.onConfirm();
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// InputModal
+// ---------------------------------------------------------------------------
+class InputModal extends Modal {
+  /**
+   * @param {App} app
+   * @param {object} opts
+   * @param {string} opts.title - Modal title
+   * @param {string} [opts.message] - Optional HTML message above the input
+   * @param {string} [opts.placeholder] - Input placeholder
+   * @param {string} [opts.basePath] - Base path prefix shown before the input
+   * @param {string[]} [opts.suggestions] - Autocomplete suggestion list
+   * @param {string} [opts.confirmText] - Confirm button label
+   * @param {string} [opts.cancelText] - Cancel button label
+   * @param {(value: string) => void|Promise<void>} opts.onConfirm - Callback with input value
+   */
+  constructor(app, opts) {
+    super(app);
+    this.opts = opts;
+  }
+
+  onOpen() {
+    const { contentEl, opts } = this;
+    contentEl.empty();
+    contentEl.addClass('gallery-confirm-modal');
+
+    contentEl.createEl('h3', { text: opts.title });
+
+    if (opts.message) {
+      const msgEl = contentEl.createEl('p');
+      msgEl.innerHTML = opts.message;
+    }
+
+    // Input row with optional base path prefix
+    const inputRow = contentEl.createEl('div', { cls: 'gallery-input-row' });
+    if (opts.basePath) {
+      inputRow.createEl('span', { text: opts.basePath, cls: 'gallery-input-prefix' });
+    }
+    const input = inputRow.createEl('input', {
+      cls: 'gallery-input',
+      attr: { type: 'text', placeholder: opts.placeholder || '' },
+    });
+
+    // Suggestions dropdown
+    const suggestions = opts.suggestions || [];
+    let suggestEl = null;
+    let activeSuggestIdx = -1;
+
+    if (suggestions.length > 0) {
+      suggestEl = contentEl.createEl('div', { cls: 'gallery-suggest-list' });
+      suggestEl.style.display = 'none';
+
+      const renderSuggestions = (filter) => {
+        suggestEl.empty();
+        activeSuggestIdx = -1;
+        const query = filter.toLowerCase();
+        const matched = query
+          ? suggestions.filter(s => s.toLowerCase().includes(query))
+          : suggestions;
+        if (matched.length === 0) {
+          suggestEl.style.display = 'none';
+          return;
+        }
+        for (const item of matched) {
+          const row = suggestEl.createEl('div', { cls: 'gallery-suggest-item' });
+          // Highlight the matching portion
+          const idx = item.toLowerCase().indexOf(query);
+          if (query && idx >= 0) {
+            row.appendText(item.substring(0, idx));
+            row.createEl('strong', { text: item.substring(idx, idx + query.length) });
+            row.appendText(item.substring(idx + query.length));
+          } else {
+            row.appendText(item);
+          }
+          row.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            input.value = item + '/';
+            input.focus();
+            suggestEl.style.display = 'none';
+          });
+        }
+        suggestEl.style.display = '';
+      };
+
+      input.addEventListener('input', () => renderSuggestions(input.value.trim()));
+      input.addEventListener('focus', () => {
+        if (input.value.trim() === '') renderSuggestions('');
+      });
+      input.addEventListener('blur', () => {
+        // Small delay so mousedown on suggestion fires first
+        setTimeout(() => { suggestEl.style.display = 'none'; }, 150);
+      });
+    }
+
+    input.focus();
+
+    const btnRow = contentEl.createEl('div', { cls: 'gallery-confirm-actions' });
+
+    const cancelBtn = btnRow.createEl('button', {
+      text: opts.cancelText || t('cancel'),
+      cls: 'gallery-confirm-btn gallery-confirm-btn-cancel',
+    });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const confirmBtn = btnRow.createEl('button', {
+      text: opts.confirmText || t('confirm'),
+      cls: 'gallery-confirm-btn gallery-confirm-btn-ok',
+    });
+    const doConfirm = async () => {
+      const val = input.value.trim();
+      if (!val) return;
+      this.close();
+      if (opts.onConfirm) await opts.onConfirm(val);
+    };
+    confirmBtn.addEventListener('click', doConfirm);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doConfirm();
     });
   }
 
@@ -342,7 +484,12 @@ class EditTimeModal extends Modal {
           fs.utimesSync(fullPath, newMtime, newMtime);
         }
 
-        // Refresh Obsidian's internal file cache
+        // Update Obsidian's in-memory stat cache immediately so the UI
+        // reflects the new values without waiting for a file-system event.
+        file.stat.ctime = newCtime.getTime();
+        file.stat.mtime = newMtime.getTime();
+
+        // Also ask Obsidian to reconcile from disk (async, best-effort)
         this.app.vault.adapter.reconcileFile(file.path, file.path);
 
         this.close();
@@ -444,15 +591,18 @@ class GalleryView extends ItemView {
 
     const settings = this.plugin.settings;
 
-    // Collect root-level folders
-    const root = this.app.vault.getRoot();
-    const excludeDirs = new Set(
-      settings.excludeDirs.split(',').map(s => s.trim()).filter(Boolean)
-    );
-    const folders = root.children
-      .filter(f => f.children !== undefined && !f.name.startsWith('.') && !excludeDirs.has(f.name))
-      .map(f => f.name)
-      .sort();
+    // Collect root-level folders (re-evaluated on each refresh)
+    const collectFolders = () => {
+      const root = this.app.vault.getRoot();
+      const excludeDirs = new Set(
+        settings.excludeDirs.split(',').map(s => s.trim()).filter(Boolean)
+      );
+      return root.children
+        .filter(f => f.children !== undefined && !f.name.startsWith('.') && !excludeDirs.has(f.name))
+        .map(f => f.name)
+        .sort();
+    };
+    let folders = collectFolders();
 
     // Folder tabs — horizontal tag buttons (first row)
     const initialFolder = settings.lastSelectedFolder || settings.defaultFolder || '';
@@ -486,6 +636,7 @@ class GalleryView extends ItemView {
     let draggedFolder = null;
 
     const renderFolderTabs = () => {
+      folders = collectFolders();
       folderBar.empty();
       tabEls.length = 0;
       const currentPinned = settings.pinnedFolders || [];
@@ -639,6 +790,26 @@ class GalleryView extends ItemView {
           });
       });
       menu.addItem((item) => {
+        item.setTitle(t('newFolder'))
+          .setIcon('folder-plus')
+          .onClick(() => {
+            const dir = currentFolder === FOLDER_ALL ? '/' : currentFolder;
+            const prefix = dir === '/' ? '' : dir + '/';
+            new InputModal(this.app, {
+              title: t('newFolderTitle'),
+              basePath: prefix,
+              placeholder: t('newFolderPlaceholder'),
+              suggestions: getChildFolderNames(this.app.vault, dir),
+              onConfirm: async (name) => {
+                const folderPath = prefix + name;
+                await this.app.vault.createFolder(folderPath);
+                await renderCards(currentFolder);
+              },
+            }).open();
+          });
+      });
+      menu.addSeparator();
+      menu.addItem((item) => {
         item.setTitle(t('refresh'))
           .setIcon('refresh-cw')
           .onClick(async () => {
@@ -670,6 +841,7 @@ class GalleryView extends ItemView {
     // renderCards — with batched rendering & empty state
     // ------------------------------------------------------------------
     const renderCards = async (folder) => {
+      renderFolderTabs();
       cardArea.empty();
 
       // Collect files
@@ -810,17 +982,35 @@ class GalleryView extends ItemView {
               e.stopPropagation();
               const menu = new Menu();
               // -- 创建 --
+              const cardDir = currentFolder === FOLDER_ALL ? '/' : getParentPath(file);
               menu.addItem((item) => {
                 item.setTitle(t('newNote'))
                   .setIcon('plus')
                   .onClick(() => {
-                    const dir = getParentPath(file);
                     new ConfirmModal(this.app, {
                       title: t('newNoteTitle'),
-                      message: t('newNoteConfirmDir', { dir }),
+                      message: t('newNoteConfirmDir', { dir: cardDir }),
                       confirmText: t('confirm'),
                       onConfirm: async () => {
-                        await this.createNewNote(dir);
+                        await this.createNewNote(cardDir);
+                        await renderCards(currentFolder);
+                      },
+                    }).open();
+                  });
+              });
+              menu.addItem((item) => {
+                item.setTitle(t('newFolder'))
+                  .setIcon('folder-plus')
+                  .onClick(() => {
+                    const prefix = cardDir === '/' ? '' : cardDir + '/';
+                    new InputModal(this.app, {
+                      title: t('newFolderTitle'),
+                      basePath: prefix,
+                      placeholder: t('newFolderPlaceholder'),
+                      suggestions: getChildFolderNames(this.app.vault, cardDir),
+                      onConfirm: async (name) => {
+                        const folderPath = prefix + name;
+                        await this.app.vault.createFolder(folderPath);
                         await renderCards(currentFolder);
                       },
                     }).open();
@@ -876,15 +1066,6 @@ class GalleryView extends ItemView {
                     }).open();
                   });
               });
-              menu.addSeparator();
-              // -- 刷新 --
-              menu.addItem((item) => {
-                item.setTitle(t('refresh'))
-                  .setIcon('refresh-cw')
-                  .onClick(async () => {
-                    await renderCards(currentFolder);
-                  });
-              });
               menu.showAtMouseEvent(e);
             });
 
@@ -922,7 +1103,17 @@ class GalleryView extends ItemView {
 
             const footer = card.createEl('div', { cls: 'card-footer' });
             if (settings.showFolder) {
-              footer.createEl('div', { text: getParentPath(file), cls: 'card-folder' });
+              const folderEl = footer.createEl('div', { cls: 'card-folder' });
+              const folderSpan = folderEl.createEl('span', { text: getParentPath(file) });
+              // Defer overflow measurement to after DOM layout
+              requestAnimationFrame(() => {
+                const overflow = folderSpan.scrollWidth - folderEl.clientWidth;
+                if (overflow > 0) {
+                  folderEl.style.setProperty('--folder-overflow', overflow);
+                } else {
+                  folderEl.classList.add('no-overflow');
+                }
+              });
             }
             if (settings.showDate) {
               footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
