@@ -658,10 +658,18 @@ class GalleryView extends ItemView {
       if (!parentFolderName || parentFolderName === FOLDER_ALL) return [];
       const folderObj = this.app.vault.getAbstractFileByPath(parentFolderName);
       if (!folderObj || !folderObj.children) return [];
-      return folderObj.children
-        .filter(f => f.children !== undefined && !f.name.startsWith('.'))
-        .map(f => f.name)
-        .sort();
+      const subFolders = folderObj.children
+        .filter(f => f.children !== undefined && !f.name.startsWith('.'));
+      const sortBy = settings.sortBy || 'mtime';
+      const sortOrder = settings.sortOrder || 'desc';
+      const dir = sortOrder === 'desc' ? -1 : 1;
+      if (sortBy === 'title') {
+        subFolders.sort((a, b) => dir * a.name.localeCompare(b.name, 'zh'));
+      } else {
+        const timeKey = sortBy === 'ctime' ? 'ctime' : 'mtime';
+        subFolders.sort((a, b) => dir * ((a.stat?.[timeKey] || 0) - (b.stat?.[timeKey] || 0)));
+      }
+      return subFolders.map(f => f.name);
     };
 
     // Sort folders: use saved order, pinned first, new folders appended alphabetically
@@ -887,9 +895,9 @@ class GalleryView extends ItemView {
     const noteCountEl = infoBar.createEl('span', { cls: 'gallery-note-count' });
     const infoBarRight = infoBar.createEl('div', { cls: 'gallery-info-bar-right' });
     const expandAllBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-collapse-toggle', attr: { 'aria-label': t('expandAll') } });
-    expandAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>';
+    expandAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>';
     const collapseAllBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-collapse-toggle', attr: { 'aria-label': t('collapseAll') } });
-    collapseAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>';
+    collapseAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>';
 
     // Zoom buttons (DOM created here; logic wired after cardArea is created below)
     const zoomOutBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-zoom-btn', attr: { 'aria-label': t('zoomOut') } });
