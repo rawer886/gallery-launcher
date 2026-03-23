@@ -13,6 +13,7 @@ const FM_KEY_COLOR = 'gallery-color';
 const CSS_VAR_MIN_WIDTH = '--gallery-card-min-width';
 const CSS_VAR_MIN_HEIGHT = '--gallery-card-min-height';
 const DEBOUNCE_MS = 500;
+const CARD_ZOOM_LEVELS = ['large', 'medium', 'small'];
 const SUMMARY_MAX_LENGTH = 150;
 const STAR_SVG_PATH = '12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2';
 
@@ -35,8 +36,7 @@ const DEFAULT_SETTINGS = {
   defaultFolder: '',
   lastSelectedFolder: '',
   collapsedGroups: [],
-  cardMinWidth: 200,
-  cardMinHeight: 240,
+  cardZoom: 'large',
   showTags: true,
   showFolder: true,
   showDate: true,
@@ -125,6 +125,8 @@ const TRANSLATIONS = {
     favorite: 'Favorite',
     unfavorite: 'Unfavorite',
     favoritesSection: 'Favorites',
+    zoomIn: 'Larger cards',
+    zoomOut: 'Smaller cards',
   },
   zh: {
     allFolders: '全部目录',
@@ -196,6 +198,8 @@ const TRANSLATIONS = {
     newFolder: '新建目录',
     newFolderTitle: '新建目录',
     newFolderPlaceholder: '目录名称',
+    zoomIn: '卡片放大',
+    zoomOut: '卡片缩小',
     favorite: '收藏笔记',
     unfavorite: '取消收藏',
     favoritesSection: '收藏夹',
@@ -886,6 +890,13 @@ class GalleryView extends ItemView {
     expandAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>';
     const collapseAllBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-collapse-toggle', attr: { 'aria-label': t('collapseAll') } });
     collapseAllBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>';
+
+    // Zoom buttons (DOM created here; logic wired after cardArea is created below)
+    const zoomOutBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-zoom-btn', attr: { 'aria-label': t('zoomOut') } });
+    zoomOutBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
+    const zoomInBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn gallery-zoom-btn', attr: { 'aria-label': t('zoomIn') } });
+    zoomInBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
+
     const sortBtn = infoBarRight.createEl('button', { cls: 'gallery-sort-btn', attr: { 'aria-label': t('sort') } });
     sortBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="m3 17 3 3 3-3"/><path d="M6 18V4"/></svg>';
 
@@ -941,7 +952,36 @@ class GalleryView extends ItemView {
     };
 
     // Card area
-    const cardArea = container.createEl('div');
+    const cardArea = container.createEl('div', { cls: `gallery-zoom-${settings.cardZoom || 'large'}` });
+
+    // Zoom logic (wired here because cardArea must exist first)
+    const applyZoom = (zoom) => {
+      cardArea.classList.remove('gallery-zoom-large', 'gallery-zoom-medium', 'gallery-zoom-small');
+      cardArea.classList.add(`gallery-zoom-${zoom}`);
+      const idx = CARD_ZOOM_LEVELS.indexOf(zoom);
+      zoomInBtn.disabled = idx === 0;
+      zoomOutBtn.disabled = idx === CARD_ZOOM_LEVELS.length - 1;
+      zoomInBtn.classList.toggle('is-disabled', idx === 0);
+      zoomOutBtn.classList.toggle('is-disabled', idx === CARD_ZOOM_LEVELS.length - 1);
+    };
+    applyZoom(settings.cardZoom || 'large');
+
+    zoomInBtn.addEventListener('click', async () => {
+      const idx = CARD_ZOOM_LEVELS.indexOf(settings.cardZoom || 'large');
+      if (idx > 0) {
+        settings.cardZoom = CARD_ZOOM_LEVELS[idx - 1];
+        await this.plugin.saveData(settings);
+        applyZoom(settings.cardZoom);
+      }
+    });
+    zoomOutBtn.addEventListener('click', async () => {
+      const idx = CARD_ZOOM_LEVELS.indexOf(settings.cardZoom || 'large');
+      if (idx < CARD_ZOOM_LEVELS.length - 1) {
+        settings.cardZoom = CARD_ZOOM_LEVELS[idx + 1];
+        await this.plugin.saveData(settings);
+        applyZoom(settings.cardZoom);
+      }
+    });
 
     container.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -1058,14 +1098,17 @@ class GalleryView extends ItemView {
 
       // Render a single card into a grid container
       const renderSingleCard = async (grid, file) => {
+        const zoom = settings.cardZoom || 'large';
         let summary = '';
-        try {
-          const content = await this.app.vault.cachedRead(file);
-          summary = stripMarkdown(content, SUMMARY_MAX_LENGTH);
-          if (summary.length >= SUMMARY_MAX_LENGTH) {
-            summary += '...';
-          }
-        } catch (e) { /* ignore */ }
+        if (zoom === 'large') {
+          try {
+            const content = await this.app.vault.cachedRead(file);
+            summary = stripMarkdown(content, SUMMARY_MAX_LENGTH);
+            if (summary.length >= SUMMARY_MAX_LENGTH) {
+              summary += '...';
+            }
+          } catch (e) { /* ignore */ }
+        }
 
         const card = grid.createEl('div', { cls: 'gallery-card' });
         const cardCache = this.app.metadataCache.getFileCache(file);
@@ -1204,8 +1247,8 @@ class GalleryView extends ItemView {
           starSpan.innerHTML = starSvg(12, 1.5);
         }
 
-        // Tags
-        if (settings.showTags) {
+        // Tags (hidden in small zoom)
+        if (settings.showTags && zoom !== 'small') {
           const tagSet = new Set();
           if (cardCache) {
             if (cardCache.frontmatter && cardCache.frontmatter.tags) {
@@ -1230,7 +1273,9 @@ class GalleryView extends ItemView {
           }
         }
 
-        body.createEl('div', { text: summary || t('noContent'), cls: 'card-content' });
+        if (zoom === 'large') {
+          body.createEl('div', { text: summary || t('noContent'), cls: 'card-content' });
+        }
 
         if (settings.showFolder || settings.showDate) {
           const footer = card.createEl('div', { cls: 'card-footer' });
@@ -1422,8 +1467,6 @@ class GallerySettingTab extends PluginSettingTab {
     this._addToggleSetting(containerEl, 'settingOpenOnStartup', 'settingOpenOnStartupDesc', 'openOnStartup');
     this._addTextSetting(containerEl, 'settingExcludeDirs', 'settingExcludeDirsDesc', 'assets, templates', 'excludeDirs');
     this._addTextSetting(containerEl, 'settingDefaultFolder', 'settingDefaultFolderDesc', t('settingDefaultFolderPlaceholder'), 'defaultFolder');
-    this._addNumericSetting(containerEl, 'settingCardMinWidth', 'settingCardMinWidthDesc', '200', 'cardMinWidth');
-    this._addNumericSetting(containerEl, 'settingCardMinHeight', 'settingCardMinHeightDesc', '240', 'cardMinHeight');
     this._addToggleSetting(containerEl, 'settingShowTags', 'settingShowTagsDesc', 'showTags');
     this._addToggleSetting(containerEl, 'settingShowFolder', 'settingShowFolderDesc', 'showFolder');
     this._addToggleSetting(containerEl, 'settingShowDate', 'settingShowDateDesc', 'showDate');
@@ -1528,8 +1571,7 @@ class GalleryLauncherPlugin extends Plugin {
   }
 
   updateCSSVariables() {
-    document.body.style.setProperty(CSS_VAR_MIN_WIDTH, `${this.settings.cardMinWidth}px`);
-    document.body.style.setProperty(CSS_VAR_MIN_HEIGHT, `${this.settings.cardMinHeight}px`);
+    // CSS variables for card size are now controlled by zoom level classes
   }
 
   async activateView() {
@@ -1543,10 +1585,7 @@ class GalleryLauncherPlugin extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
-  onunload() {
-    document.body.style.removeProperty(CSS_VAR_MIN_WIDTH);
-    document.body.style.removeProperty(CSS_VAR_MIN_HEIGHT);
-  }
+  onunload() {}
 }
 
 module.exports = GalleryLauncherPlugin;
