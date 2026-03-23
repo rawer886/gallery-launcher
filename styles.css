@@ -61,6 +61,50 @@
   background: var(--background-modifier-hover);
 }
 
+/* ── Sub-folder tab bar ── */
+.gallery-subfolder-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 3px;
+  margin-top: -4px;
+  margin-bottom: 10px;
+  padding: 4px 8px 4px 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  border-left: 2px solid var(--background-modifier-border);
+  margin-left: 12px;
+  position: relative;
+}
+.gallery-subfolder-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery-subfolder-tab {
+  padding: 1px 8px !important;
+  font-size: 0.68em !important;
+  font-weight: 600 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  opacity: 1;
+}
+.gallery-subfolder-tab:hover {
+  background: var(--background-modifier-hover) !important;
+  color: var(--text-normal) !important;
+  border-color: var(--background-modifier-border-hover) !important;
+}
+.gallery-subfolder-tab.is-active {
+  background: var(--color-cyan) !important;
+  color: white !important;
+  border-color: transparent !important;
+  font-weight: 600 !important;
+  opacity: 1 !important;
+}
+
 /* ── Info bar — note count + sort ── */
 .gallery-info-bar {
   display: flex;
@@ -172,6 +216,12 @@
   transform: translateY(-1px);
 }
 
+/* Card body wrapper — must be width-constrained for title overflow to work */
+.gallery-card > div:first-child {
+  min-width: 0;
+  overflow: hidden;
+}
+
 /* Card title */
 .gallery-card .card-title {
   font-size: 0.92em;
@@ -180,6 +230,26 @@
   line-height: 1.4;
   color: var(--text-normal);
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.gallery-card .card-title span {
+  display: inline-block;
+  white-space: nowrap;
+}
+.gallery-card:hover .card-title {
+  text-overflow: clip;
+}
+.gallery-card:hover .card-title:not(.no-overflow) span {
+  animation: title-scroll 1.5s linear 0.2s infinite alternate;
+}
+@keyframes title-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(calc(var(--title-overflow, 0) * -1px)); }
 }
 
 /* Card content / summary */

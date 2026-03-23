@@ -73,6 +73,9 @@ const TRANSLATIONS = {
     delete: 'Delete',
     pinFolder: 'Pin to top',
     unpinFolder: 'Unpin',
+    renameFolder: 'Rename',
+    renameFolderTitle: 'Rename folder',
+    renameFolderPlaceholder: 'New folder name',
     untitledNote: 'Untitled',
     noContent: 'No content',
     emptyGallery: 'No notes found',
@@ -144,6 +147,9 @@ const TRANSLATIONS = {
     delete: '删除',
     pinFolder: '置顶',
     unpinFolder: '取消置顶',
+    renameFolder: '重命名',
+    renameFolderTitle: '重命名目录',
+    renameFolderPlaceholder: '新目录名称',
     untitledNote: '未命名笔记',
     noContent: '暂无内容',
     emptyGallery: '暂无笔记',
@@ -626,15 +632,32 @@ class GalleryView extends ItemView {
     // Folder tabs — horizontal tag buttons (first row)
     const initialFolder = settings.defaultFolder || settings.lastSelectedFolder || '';
     let currentFolder = (initialFolder && folders.includes(initialFolder)) ? initialFolder : FOLDER_ALL;
+    let currentSubFolder = null; // null = sub-tab "All"; string = selected sub-folder path
     const folderBar = container.createEl('div', { cls: 'gallery-folder-bar' });
+    const subFolderBar = container.createEl('div', { cls: 'gallery-subfolder-bar' });
+    subFolderBar.style.display = 'none';
 
     const tabEls = [];
+    const subTabEls = [];
 
     const setActiveTab = (value) => {
       currentFolder = value;
+      currentSubFolder = null;
       for (const tab of tabEls) {
         tab.toggleClass('is-active', tab.dataset.folder === value);
       }
+      renderSubFolderTabs(value);
+    };
+
+    // Collect direct sub-folders of a given folder path
+    const collectSubFolders = (parentFolderName) => {
+      if (!parentFolderName || parentFolderName === FOLDER_ALL) return [];
+      const folderObj = this.app.vault.getAbstractFileByPath(parentFolderName);
+      if (!folderObj || !folderObj.children) return [];
+      return folderObj.children
+        .filter(f => f.children !== undefined && !f.name.startsWith('.'))
+        .map(f => f.name)
+        .sort();
     };
 
     // Sort folders: use saved order, pinned first, new folders appended alphabetically
@@ -718,7 +741,7 @@ class GalleryView extends ItemView {
             renderFolderTabs();
           });
 
-          // Right-click context menu for pin/unpin
+          // Right-click context menu for pin/unpin and rename
           tab.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -737,6 +760,42 @@ class GalleryView extends ItemView {
                   renderFolderTabs();
                 });
             });
+            menu.addItem((item) => {
+              item.setTitle(t('renameFolder'))
+                .setIcon('pencil')
+                .onClick(() => {
+                  new InputModal(this.app, {
+                    title: t('renameFolderTitle'),
+                    placeholder: t('renameFolderPlaceholder'),
+                    confirmText: t('confirm'),
+                    cancelText: t('cancel'),
+                    onConfirm: async (newName) => {
+                      newName = newName.trim();
+                      if (!newName || newName === value) return;
+                      const folderObj = this.app.vault.getAbstractFileByPath(value);
+                      if (!folderObj) return;
+                      const newPath = newName;
+                      try {
+                        await this.app.fileManager.renameFile(folderObj, newPath);
+                        // Update settings that reference the old folder name
+                        if (settings.lastSelectedFolder === value) settings.lastSelectedFolder = newName;
+                        if (settings.defaultFolder === value) settings.defaultFolder = newName;
+                        settings.pinnedFolders = (settings.pinnedFolders || []).map(f => f === value ? newName : f);
+                        settings.folderOrder = (settings.folderOrder || []).map(f => f === value ? newName : f);
+                        await this.plugin.saveData(settings);
+                        if (currentFolder === value) {
+                          currentFolder = newName;
+                        }
+                        renderFolderTabs();
+                        renderSubFolderTabs(currentFolder);
+                        await renderCards(currentFolder);
+                      } catch (err) {
+                        new Notice(err.message);
+                      }
+                    },
+                  }).open();
+                });
+            });
             menu.showAtMouseEvent(e);
           });
         }
@@ -744,7 +803,80 @@ class GalleryView extends ItemView {
       }
     };
 
+    const renderSubFolderTabs = (parentFolder) => {
+      subFolderBar.empty();
+      subTabEls.length = 0;
+      const subFolders = collectSubFolders(parentFolder);
+      if (subFolders.length === 0) {
+        subFolderBar.style.display = 'none';
+        currentSubFolder = null;
+        return;
+      }
+      subFolderBar.style.display = '';
+
+      // "All" tab
+      const allTab = subFolderBar.createEl('button', { cls: 'gallery-folder-tab gallery-subfolder-tab' });
+      allTab.textContent = t('allFolders');
+      allTab.dataset.subfolder = '';
+      if (currentSubFolder === null) allTab.addClass('is-active');
+      allTab.addEventListener('click', async () => {
+        currentSubFolder = null;
+        for (const el of subTabEls) el.toggleClass('is-active', el.dataset.subfolder === '');
+        await renderCards(currentFolder);
+      });
+      subTabEls.push(allTab);
+
+      // Sub-folder tabs
+      for (const subName of subFolders) {
+        const subPath = parentFolder + '/' + subName;
+        const tab = subFolderBar.createEl('button', { cls: 'gallery-folder-tab gallery-subfolder-tab' });
+        tab.textContent = subName;
+        tab.dataset.subfolder = subPath;
+        if (currentSubFolder === subPath) tab.addClass('is-active');
+        tab.addEventListener('click', async () => {
+          currentSubFolder = subPath;
+          for (const el of subTabEls) el.toggleClass('is-active', el.dataset.subfolder === subPath);
+          await renderCards(currentFolder);
+        });
+        tab.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = new Menu();
+          menu.addItem((item) => {
+            item.setTitle(t('renameFolder'))
+              .setIcon('pencil')
+              .onClick(() => {
+                new InputModal(this.app, {
+                  title: t('renameFolderTitle'),
+                  placeholder: t('renameFolderPlaceholder'),
+                  confirmText: t('confirm'),
+                  cancelText: t('cancel'),
+                  onConfirm: async (newName) => {
+                    newName = newName.trim();
+                    if (!newName || newName === subName) return;
+                    const folderObj = this.app.vault.getAbstractFileByPath(subPath);
+                    if (!folderObj) return;
+                    const newPath = parentFolder + '/' + newName;
+                    try {
+                      await this.app.fileManager.renameFile(folderObj, newPath);
+                      if (currentSubFolder === subPath) currentSubFolder = newPath;
+                      renderSubFolderTabs(currentFolder);
+                      await renderCards(currentFolder);
+                    } catch (err) {
+                      new Notice(err.message);
+                    }
+                  },
+                }).open();
+              });
+          });
+          menu.showAtMouseEvent(e);
+        });
+        subTabEls.push(tab);
+      }
+    };
+
     renderFolderTabs();
+    renderSubFolderTabs(currentFolder);
 
     // Info bar — note count (left) + sort button (right)
     const infoBar = container.createEl('div', { cls: 'gallery-info-bar' });
@@ -864,6 +996,7 @@ class GalleryView extends ItemView {
       const freshFolders = collectFolders();
       if (freshFolders.length !== folders.length || freshFolders.some((f, i) => f !== folders[i])) {
         renderFolderTabs();
+        renderSubFolderTabs(currentFolder);
       }
       cardArea.empty();
 
@@ -877,7 +1010,8 @@ class GalleryView extends ItemView {
           }
         }
       } else {
-        const folderObj = this.app.vault.getAbstractFileByPath(folder);
+        const targetPath = currentSubFolder || folder;
+        const folderObj = this.app.vault.getAbstractFileByPath(targetPath);
         if (folderObj && folderObj.children) {
           this.collectNoteFiles(folderObj, files);
         }
@@ -1055,7 +1189,16 @@ class GalleryView extends ItemView {
         });
 
         const body = card.createEl('div');
-        body.createEl('div', { text: file.basename, cls: 'card-title' });
+        const titleEl = body.createEl('div', { cls: 'card-title' });
+        const titleSpan = titleEl.createEl('span', { text: file.basename });
+        requestAnimationFrame(() => {
+          const overflow = titleSpan.scrollWidth - titleEl.clientWidth;
+          if (overflow > 0) {
+            titleEl.style.setProperty('--title-overflow', overflow);
+          } else {
+            titleEl.classList.add('no-overflow');
+          }
+        });
         if (isFavorited) {
           const starSpan = card.createEl('span', { cls: 'gallery-card-star' });
           starSpan.innerHTML = starSvg(12, 1.5);
