@@ -88,7 +88,7 @@
   font-weight: 600 !important;
   border-radius: 5px !important;
   background: transparent !important;
-  color: var(--text-muted) !important;
+  color: var(--text-normal) !important;
   border: 1px solid var(--background-modifier-border) !important;
   opacity: 1;
 }
@@ -98,8 +98,8 @@
   border-color: var(--background-modifier-border-hover) !important;
 }
 .gallery-subfolder-tab.is-active {
-  background: var(--color-cyan) !important;
-  color: white !important;
+  background: color-mix(in srgb, var(--interactive-accent) 70%, transparent) !important;
+  color: var(--text-on-accent) !important;
   border-color: transparent !important;
   font-weight: 600 !important;
   opacity: 1 !important;
@@ -297,11 +297,13 @@
   text-overflow: clip;
 }
 .gallery-card:hover .card-title:not(.no-overflow) span {
-  animation: title-scroll 1.5s linear 0.2s infinite alternate;
+  animation: title-scroll 3s linear 0.2s infinite alternate;
 }
 @keyframes title-scroll {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(calc(var(--title-overflow, 0) * -1px)); }
+  0%     { transform: translateX(0); }
+  16.7%  { transform: translateX(0); }
+  66.7%  { transform: translateX(calc(var(--title-overflow, 0) * -1px)); }
+  100%   { transform: translateX(calc(var(--title-overflow, 0) * -1px)); }
 }
 
 /* Card content / summary */
@@ -327,8 +329,8 @@
 }
 .gallery-card .card-tags .tag-item {
   font-size: 0.66em;
-  background: var(--background-modifier-border);
-  color: var(--text-muted);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--interactive-accent);
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -361,17 +363,19 @@
   text-overflow: clip;
 }
 .gallery-card:hover .card-folder:not(.no-overflow) span {
-  animation: folder-scroll 1.5s linear 0.2s infinite alternate;
+  animation: folder-scroll 3s linear 0.2s infinite alternate;
 }
 @keyframes folder-scroll {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(calc(var(--folder-overflow, 0) * -1px)); }
+  0%     { transform: translateX(0); }
+  16.7%  { transform: translateX(0); }
+  66.7%  { transform: translateX(calc(var(--folder-overflow, 0) * -1px)); }
+  100%   { transform: translateX(calc(var(--folder-overflow, 0) * -1px)); }
 }
 
 /* Date */
 .gallery-card .card-date {
   font-size: 0.7em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-weight: 400;
   white-space: nowrap;
   flex-shrink: 0;
