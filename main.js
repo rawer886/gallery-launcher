@@ -980,6 +980,7 @@ class GalleryView extends ItemView {
         settings.cardZoom = CARD_ZOOM_LEVELS[idx - 1];
         await this.plugin.saveData(settings);
         applyZoom(settings.cardZoom);
+        await renderCards(currentFolder);
       }
     });
     zoomOutBtn.addEventListener('click', async () => {
@@ -988,6 +989,7 @@ class GalleryView extends ItemView {
         settings.cardZoom = CARD_ZOOM_LEVELS[idx + 1];
         await this.plugin.saveData(settings);
         applyZoom(settings.cardZoom);
+        await renderCards(currentFolder);
       }
     });
 
@@ -1273,11 +1275,10 @@ class GalleryView extends ItemView {
               }
             }
           }
-          if (tagSet.size > 0) {
-            const tagsEl = body.createEl('div', { cls: 'card-tags' });
-            for (const tagName of tagSet) {
-              tagsEl.createEl('span', { text: tagName, cls: 'tag-item' });
-            }
+          // Always render the tags container to reserve space (even when empty)
+          const tagsEl = body.createEl('div', { cls: 'card-tags' });
+          for (const tagName of tagSet) {
+            tagsEl.createEl('span', { text: tagName, cls: 'tag-item' });
           }
         }
 

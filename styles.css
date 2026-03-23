@@ -163,7 +163,6 @@
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }
 .gallery-zoom-large .gallery-card {
-  min-height: 240px;
 }
 
 /* ── Zoom levels — Medium: 标题+标签+页脚，无摘要 ── */
@@ -259,7 +258,6 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 240px;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 .gallery-card:hover {
@@ -311,7 +309,8 @@
   font-size: 0.78em;
   line-height: 1.6;
   color: var(--text-muted);
-  flex: 1;
+  /* Fixed 4-line height: font-size(0.78em≈12.5px) * line-height(1.6) * 4 rows ≈ 80px */
+  height: 80px;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
@@ -320,19 +319,26 @@
   margin-bottom: 12px;
 }
 
-/* Tags */
+/* Tags — fixed 2-line height */
 .gallery-card .card-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 8px;
+  /* 2 rows of tags: each row = line-height(1.4) + padding-top(2px) + padding-bottom(2px) = 1lh+4px
+     total = row1 + gap(4px) + row2, set on .tag-item's own lh via font-size scoping */
+  height: 42px;
+  overflow: hidden;
+  align-content: flex-start;
 }
 .gallery-card .card-tags .tag-item {
   font-size: 0.66em;
+  line-height: 1.4;
   background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
   color: var(--interactive-accent);
   padding: 2px 8px;
   border-radius: 10px;
+  white-space: nowrap;
 }
 
 /* Card footer */
