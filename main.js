@@ -37,9 +37,7 @@ const DEFAULT_SETTINGS = {
   lastSelectedFolder: '',
   collapsedGroups: [],
   cardZoom: 'large',
-  showTags: true,
-  showFolder: true,
-  showDate: true,
+  showFavoritesInPlace: false,
   openOnStartup: false,
   sortBy: 'mtime',
   sortOrder: 'desc',
@@ -98,12 +96,8 @@ const TRANSLATIONS = {
     settingCardMinWidthDesc: 'Minimum width of each card in the grid layout',
     settingCardMinHeight: 'Card min height (px)',
     settingCardMinHeightDesc: 'Minimum height of each card',
-    settingShowTags: 'Show tags',
-    settingShowTagsDesc: 'Display note tags on cards',
-    settingShowFolder: 'Show folder path',
-    settingShowFolderDesc: 'Display the folder path at the bottom of cards',
-    settingShowDate: 'Show date',
-    settingShowDateDesc: 'Display the creation date at the bottom of cards',
+    settingShowFavoritesInPlace: 'Show favorites in place',
+    settingShowFavoritesInPlaceDesc: 'Keep favorited notes in the normal list (in addition to the favorites section)',
     revealInExplorer: 'Show in explorer',
     editTime: 'Edit time',
     editTimeTitle: 'Edit note time',
@@ -174,12 +168,8 @@ const TRANSLATIONS = {
     settingCardMinWidthDesc: '网格布局中每张卡片的最小宽度',
     settingCardMinHeight: '卡片最小高度 (px)',
     settingCardMinHeightDesc: '每张卡片的最小高度',
-    settingShowTags: '显示标签',
-    settingShowTagsDesc: '在卡片中显示笔记的标签',
-    settingShowFolder: '显示目录路径',
-    settingShowFolderDesc: '在卡片底部显示笔记所在的目录路径',
-    settingShowDate: '显示日期',
-    settingShowDateDesc: '在卡片底部显示笔记的创建日期',
+    settingShowFavoritesInPlace: '收藏笔记保留原位',
+    settingShowFavoritesInPlaceDesc: '收藏的笔记同时在正常列表中显示',
     revealInExplorer: '在文件管理器中显示',
     editTime: '修改时间',
     editTimeTitle: '修改笔记时间',
@@ -1272,7 +1262,7 @@ class GalleryView extends ItemView {
         }
 
         // Tags (hidden in small zoom)
-        if (settings.showTags && zoom !== 'small') {
+        if (zoom !== 'small') {
           const tagSet = new Set();
           if (cardCache) {
             if (cardCache.frontmatter && cardCache.frontmatter.tags) {
@@ -1300,24 +1290,18 @@ class GalleryView extends ItemView {
           body.createEl('div', { text: summary || t('noContent'), cls: 'card-content' });
         }
 
-        if (settings.showFolder || settings.showDate) {
-          const footer = card.createEl('div', { cls: 'card-footer' });
-          if (settings.showFolder) {
-            const folderEl = footer.createEl('div', { cls: 'card-folder' });
-            const folderSpan = folderEl.createEl('span', { text: getParentPath(file) });
-            requestAnimationFrame(() => {
-              const overflow = folderSpan.scrollWidth - folderEl.clientWidth;
-              if (overflow > 0) {
-                folderEl.style.setProperty('--folder-overflow', overflow);
-              } else {
-                folderEl.classList.add('no-overflow');
-              }
-            });
+        const footer = card.createEl('div', { cls: 'card-footer' });
+        const folderEl = footer.createEl('div', { cls: 'card-folder' });
+        const folderSpan = folderEl.createEl('span', { text: getParentPath(file) });
+        requestAnimationFrame(() => {
+          const overflow = folderSpan.scrollWidth - folderEl.clientWidth;
+          if (overflow > 0) {
+            folderEl.style.setProperty('--folder-overflow', overflow);
+          } else {
+            folderEl.classList.add('no-overflow');
           }
-          if (settings.showDate) {
-            footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
-          }
-        }
+        });
+        footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
       };
 
       const renderBatch = async (limit) => {
@@ -1357,25 +1341,28 @@ class GalleryView extends ItemView {
         }
 
         // ── Regular groups ──
+        const regularFiles = (settings.showFavoritesInPlace || favoriteFiles.length === 0)
+          ? visibleFiles
+          : visibleFiles.filter(f => !favoriteFiles.includes(f));
         const groupEnabled = settings.groupByMonth !== false;
         const groups = {};
         if (groupEnabled) {
           if (sortBy === 'title') {
-            for (const file of visibleFiles) {
+            for (const file of regularFiles) {
               const folder = getParentPath(file);
               if (!groups[folder]) groups[folder] = [];
               groups[folder].push(file);
             }
           } else {
             const timeKey = (sortBy === 'ctime') ? 'ctime' : 'mtime';
-            for (const file of visibleFiles) {
+            for (const file of regularFiles) {
               const month = formatDate(new Date(file.stat[timeKey]), false);
               if (!groups[month]) groups[month] = [];
               groups[month].push(file);
             }
           }
         } else {
-          groups[GROUP_FLAT] = visibleFiles;
+          groups[GROUP_FLAT] = regularFiles;
         }
 
         const groupKeys = Object.keys(groups);
@@ -1490,9 +1477,7 @@ class GallerySettingTab extends PluginSettingTab {
     this._addToggleSetting(containerEl, 'settingOpenOnStartup', 'settingOpenOnStartupDesc', 'openOnStartup');
     this._addTextSetting(containerEl, 'settingExcludeDirs', 'settingExcludeDirsDesc', 'assets, templates', 'excludeDirs');
     this._addTextSetting(containerEl, 'settingDefaultFolder', 'settingDefaultFolderDesc', t('settingDefaultFolderPlaceholder'), 'defaultFolder');
-    this._addToggleSetting(containerEl, 'settingShowTags', 'settingShowTagsDesc', 'showTags');
-    this._addToggleSetting(containerEl, 'settingShowFolder', 'settingShowFolderDesc', 'showFolder');
-    this._addToggleSetting(containerEl, 'settingShowDate', 'settingShowDateDesc', 'showDate');
+    this._addToggleSetting(containerEl, 'settingShowFavoritesInPlace', 'settingShowFavoritesInPlaceDesc', 'showFavoritesInPlace');
   }
 
   _addTextSetting(containerEl, nameKey, descKey, placeholder, settingsKey) {
