@@ -666,8 +666,22 @@ class GalleryView extends ItemView {
       if (sortBy === 'title') {
         subFolders.sort((a, b) => dir * a.name.localeCompare(b.name, 'zh'));
       } else {
+        // TFolder has no stat; use the latest file mtime/ctime within the folder
         const timeKey = sortBy === 'ctime' ? 'ctime' : 'mtime';
-        subFolders.sort((a, b) => dir * ((a.stat?.[timeKey] || 0) - (b.stat?.[timeKey] || 0)));
+        const getFolderTime = (folder) => {
+          let maxTime = 0;
+          const walk = (f) => {
+            if (f.children) {
+              for (const child of f.children) walk(child);
+            } else if (f.stat) {
+              const t = f.stat[timeKey] || 0;
+              if (t > maxTime) maxTime = t;
+            }
+          };
+          walk(folder);
+          return maxTime;
+        };
+        subFolders.sort((a, b) => dir * (getFolderTime(a) - getFolderTime(b)));
       }
       return subFolders.map(f => f.name);
     };
