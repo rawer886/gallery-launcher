@@ -1304,16 +1304,21 @@ class GalleryView extends ItemView {
         footer.createEl('div', { text: formatDate(new Date(file.stat.ctime)), cls: 'card-date' });
       };
 
+      // Pre-compute favorites from ALL files so they are never cut off by batch limit
+      const allFavoriteFiles = settings.showFavoritesInPlace ? [] : files.filter(f => {
+        const cache = this.app.metadataCache.getFileCache(f);
+        return cache?.frontmatter?.[FM_KEY_FAVORITE] === true;
+      });
+      const favoriteSet = new Set(allFavoriteFiles);
+      const nonFavoriteFiles = allFavoriteFiles.length > 0
+        ? files.filter(f => !favoriteSet.has(f))
+        : files;
+
       const renderBatch = async (limit) => {
         cardArea.empty();
-        const visibleFiles = files.slice(0, limit);
 
-        // ── Favorites section ──
-        const favoriteFiles = visibleFiles.filter(f => {
-          const cache = this.app.metadataCache.getFileCache(f);
-          return cache?.frontmatter?.[FM_KEY_FAVORITE] === true;
-        });
-        if (favoriteFiles.length > 0) {
+        // ── Favorites section (always show ALL favorites) ──
+        if (allFavoriteFiles.length > 0) {
           const favCollapsed = settings.collapsedGroups.includes(FAVORITES_GROUP_KEY);
           const favHeader = cardArea.createEl('div', { cls: 'gallery-month gallery-favorites-header' });
           favHeader.dataset.groupKey = FAVORITES_GROUP_KEY;
@@ -1323,7 +1328,7 @@ class GalleryView extends ItemView {
           const favIcon = favHeader.createSpan({ cls: 'gallery-favorites-icon' });
           favIcon.innerHTML = starSvg(14);
           const favTitle = favHeader.createSpan({ text: t('favoritesSection'), cls: 'gallery-month-title' });
-          favHeader.createSpan({ text: t('groupNoteCount', { count: favoriteFiles.length }), cls: 'gallery-month-count' });
+          favHeader.createSpan({ text: t('groupNoteCount', { count: allFavoriteFiles.length }), cls: 'gallery-month-count' });
 
           const favGrid = cardArea.createEl('div', { cls: 'gallery-container' });
           if (favCollapsed) favGrid.style.display = 'none';
@@ -1332,7 +1337,7 @@ class GalleryView extends ItemView {
           favArrow.addEventListener('click', toggleFavCollapse);
           favTitle.addEventListener('click', toggleFavCollapse);
 
-          for (const file of favoriteFiles) {
+          for (const file of allFavoriteFiles) {
             await renderSingleCard(favGrid, file);
           }
 
@@ -1340,10 +1345,10 @@ class GalleryView extends ItemView {
           cardArea.createEl('div', { cls: 'gallery-favorites-divider' });
         }
 
-        // ── Regular groups ──
-        const regularFiles = (settings.showFavoritesInPlace || favoriteFiles.length === 0)
-          ? visibleFiles
-          : visibleFiles.filter(f => !favoriteFiles.includes(f));
+        // ── Regular groups (batch limit applies only to non-favorites) ──
+        const regularFiles = settings.showFavoritesInPlace
+          ? files.slice(0, limit)
+          : nonFavoriteFiles.slice(0, limit);
         const groupEnabled = settings.groupByMonth !== false;
         const groups = {};
         if (groupEnabled) {
@@ -1368,10 +1373,14 @@ class GalleryView extends ItemView {
         const groupKeys = Object.keys(groups);
         if (groupEnabled && sortBy === 'title') {
           groupKeys.sort((a, b) => {
-            const depthA = (a.match(/\//g) || []).length;
-            const depthB = (b.match(/\//g) || []).length;
-            if (depthA !== depthB) return depthA - depthB;
-            return dir * a.localeCompare(b, 'zh');
+            const partsA = a.split('/');
+            const partsB = b.split('/');
+            const len = Math.min(partsA.length, partsB.length);
+            for (let i = 0; i < len; i++) {
+              const cmp = dir * partsA[i].localeCompare(partsB[i], 'zh');
+              if (cmp !== 0) return cmp;
+            }
+            return partsA.length - partsB.length;
           });
         }
 
@@ -1399,9 +1408,10 @@ class GalleryView extends ItemView {
           }
         }
 
-        // "Load more" button
-        if (limit < files.length) {
-          const remaining = files.length - limit;
+        // "Load more" button (based on the pool that batch limit applies to)
+        const batchPool = settings.showFavoritesInPlace ? files : nonFavoriteFiles;
+        if (limit < batchPool.length) {
+          const remaining = batchPool.length - limit;
           const loadMoreEl = cardArea.createEl('div', { cls: 'gallery-load-more' });
           const btn = loadMoreEl.createEl('button', { text: t('loadMore', { remaining }) });
           btn.addEventListener('click', async () => {
